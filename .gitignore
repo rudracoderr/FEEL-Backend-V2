@@ -1,0 +1,11 @@
+.env
+.env.*
+serviceAccountKey.json
+Config/Firebase-admin.json
+mobile-app/.env
+mobile-app/.env.*
+node_modules/
+mobile-app/node_modules/
+*.pem
+*.key
+fcm-token.html
