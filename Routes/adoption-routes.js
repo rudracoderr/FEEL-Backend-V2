@@ -8,12 +8,31 @@ const requireAuth = require("../middleware/requireAuth");
 // Create a new adoption listing. Status defaults to pending.
 router.post("/", requireAuth, async (req, res) => {
     try {
-        const payload = { ...req.body };
-        // Enforce the ownerUid to be the authenticated user's uid
-        payload.ownerUid = req.authUid;
-        
-        // Force status to pending on creation, ignoring any user-provided status
-        payload.status = "pending";
+        const {
+            animalName,
+            species,
+            breed,
+            age,
+            gender,
+            photos,
+            description,
+            location,
+            health
+        } = req.body;
+
+        const payload = {
+            animalName,
+            species,
+            breed,
+            age,
+            gender,
+            photos,
+            description,
+            location,
+            health,
+            ownerUid: req.authUid,
+            status: "pending"
+        };
 
         const adoptionListing = await AdoptionListing.create(payload);
 

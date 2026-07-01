@@ -1,5 +1,6 @@
 const express = require("express");
 const mongoose = require("mongoose");
+const helmet = require("helmet");
 const Report = require("./Models/report-model");
 const User = require("./Models/usermodel");
 const cors = require("cors");
@@ -16,6 +17,8 @@ const dns = require("dns");
 dns.setDefaultResultOrder("ipv4first");
 
 const app = express();
+
+app.use(helmet());
 
 // Trust the first proxy hop (Render / Railway sits behind one layer of reverse proxy).
 // Without this, req.ip would always be the proxy's IP, making IP-based rate limiting useless.
