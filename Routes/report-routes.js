@@ -998,7 +998,8 @@ router.delete("/:id", requireAuth, requireActiveUser, async (req, res) => {
 router.post("/:id/abuse", abuseReportLimiter, requireAuth, requireActiveUser, async (req, res) => {
     try {
         const { id } = req.params;
-        const { reportedByUid, reason } = req.body;
+        const { reason } = req.body;
+        const reportedByUid = req.authUid;
 
         if (!id) {
             return res.status(400).json({
