@@ -138,6 +138,7 @@ router.post("/", createReportLimiter, requireAuth, requireActiveUser, async (req
         const {
             title,
             description,
+            severity,
             reporterName,
             reporterContact: rawReporterContact,
             address,
@@ -149,6 +150,7 @@ router.post("/", createReportLimiter, requireAuth, requireActiveUser, async (req
         const payload = {
             title,
             description,
+            severity,
             reporterName,
             reporterContact: rawReporterContact,
             address,
