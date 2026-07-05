@@ -23,7 +23,7 @@ const requireActiveUser = require("../middleware/requireActiveUser");
 // This is a second line of defence alongside the per-user DB cooldown — it
 // catches unauthenticated bursts before they ever hit the database.
 const createReportLimiter = rateLimit({
-    windowMs: 60 * 60 * 1000, // 1 hour
+    windowMs: 1000, // 1 hour
     max: 5,
     standardHeaders: "draft-7",
     legacyHeaders: false,
@@ -124,7 +124,7 @@ function calculateDistanceKm(fromCoordinates, toCoordinates) {
     const a =
         Math.sin(deltaLatitude / 2) * Math.sin(deltaLatitude / 2) +
         Math.sin(deltaLongitude / 2) * Math.sin(deltaLongitude / 2) *
-            Math.cos(latitude1) * Math.cos(latitude2);
+        Math.cos(latitude1) * Math.cos(latitude2);
 
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
@@ -177,7 +177,7 @@ router.post("/", createReportLimiter, requireAuth, requireActiveUser, async (req
         // Uses the reporter's uid and the `date` field on saved reports. Cooldown is 5 minutes.
         try {
             if (reporterUid) {
-                const COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+                const COOLDOWN_MS = 5;
                 const lastReport = await Report.findOne({ reporterUid }).sort({ date: -1 }).select('date');
 
                 if (lastReport && lastReport.date) {
@@ -202,7 +202,7 @@ router.post("/", createReportLimiter, requireAuth, requireActiveUser, async (req
         }
 
         const report = await Report.create(payload);
-        
+
         // Fire-and-forget background notification dispatch
         notifyUsersWithinRadius(report).catch(err => {
             console.error("Background notification dispatch failed for report:", report._id, err);
@@ -840,7 +840,7 @@ router.patch("/:id/progress", requireAuth, async (req, res) => {
         // Notifications
         let title = "";
         let body = "";
-        
+
         if (progress === "On The Way") {
             title = "Volunteer is on the way";
             body = `Volunteer is on the way for your rescue request "${updatedReport.title}"`;
@@ -863,9 +863,9 @@ router.patch("/:id/progress", requireAuth, async (req, res) => {
                 // Use a unique type per progress step so the deduplication check
                 // in createNotification doesn't swallow subsequent notifications.
                 let notifType = "rescue_progress";
-                if (progress === "On The Way")          notifType = "rescue_on_the_way";
+                if (progress === "On The Way") notifType = "rescue_on_the_way";
                 else if (progress === "Reached Location") notifType = "rescue_reached_location";
-                else if (progress === "Resolved")         notifType = "rescue_completed_reporter";
+                else if (progress === "Resolved") notifType = "rescue_completed_reporter";
 
                 await createNotification({
                     recipientUid: updatedReport.reporterUid,
@@ -945,11 +945,11 @@ router.put("/:id", requireAuth, requireActiveUser, async (req, res) => {
 
         const { title, description, address, landmark, imageUrls } = req.body;
         const allowedUpdates = {};
-        if (title !== undefined)       allowedUpdates.title       = typeof title === 'string' ? title.trim() : title;
+        if (title !== undefined) allowedUpdates.title = typeof title === 'string' ? title.trim() : title;
         if (description !== undefined) allowedUpdates.description = typeof description === 'string' ? description.trim() : description;
-        if (address !== undefined)     allowedUpdates.address     = typeof address === 'string' ? address.trim() : address;
-        if (landmark !== undefined)    allowedUpdates.landmark    = typeof landmark === 'string' ? landmark.trim() : landmark;
-        if (imageUrls !== undefined)   allowedUpdates.imageUrls   = imageUrls;
+        if (address !== undefined) allowedUpdates.address = typeof address === 'string' ? address.trim() : address;
+        if (landmark !== undefined) allowedUpdates.landmark = typeof landmark === 'string' ? landmark.trim() : landmark;
+        if (imageUrls !== undefined) allowedUpdates.imageUrls = imageUrls;
 
         const report = await Report.findByIdAndUpdate(
             req.params.id,

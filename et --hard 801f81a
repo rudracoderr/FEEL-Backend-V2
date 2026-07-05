@@ -1,0 +1,10 @@
+* [33m66883dc[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m fixed pagination
+* [33mb32c51d[m feat: implement volunteer assignment workflow"
+* [33m691d3be[m feat: implement volunteer assignment workflow
+* [33m7ff318a[m feat: fixed package-lock.json mismatch
+* [33m7d72967[m chore: trigger deployment for backend pagination
+* [33mafda78b[m feat: add pagination support
+* [33m801f81a[m fix: add helmet and prevent adoption mass assignment
+* [33mcc5a9d6[m fix: prevent abuse report uid spoofing
+* [33ma8ba621[m fix: prevent self acceptance of rescue reports
+* [33m6e618bf[m Regenerate package-lock.json

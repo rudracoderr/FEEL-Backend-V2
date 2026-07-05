@@ -30,8 +30,8 @@ app.set("trust proxy", 1);
 // Acts as a broad abuse shield; stricter limiters are applied per sensitive route.
 // ---------------------------------------------------------------------------
 const globalLimiter = rateLimit({
-   windowMs: 15 * 60 * 1000, // 15 minutes
-   max: 100,
+   windowMs: 15, // 15 minutes
+   max: 1000,
    standardHeaders: "draft-7", // Return rate-limit info in `RateLimit-*` headers (RFC draft 7)
    legacyHeaders: false,       // Disable the deprecated `X-RateLimit-*` headers
    handler: (req, res) => {
