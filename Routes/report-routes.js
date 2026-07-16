@@ -9,7 +9,10 @@ const AbuseReport = require("../Models/abuse-report-model");
 const {
     notifyUsersWithinRadius,
     sendNotificationToToken,
-    createNotification
+    createNotification,
+    checkNearbyPaidVolunteersExist,
+    notifyNearbyPaidVolunteers,
+    calculateDistanceKm
 } = require("../Services/notification-service");
 const requireAuth = require("../middleware/requireAuth");
 const requireActiveUser = require("../middleware/requireActiveUser");
@@ -52,7 +55,7 @@ const abuseReportLimiter = rateLimit({
 
 const ACCEPT_RADIUS_KM = 10;
 
-const REPORT_LIST_PROJECTION = "title description severity status assignedVolunteer.uid assignedVolunteer.fullName acceptedAt resolvedAt volunteerProgress progressUpdatedAt location address landmark date reporterName reporterUid imageUrls";
+const REPORT_LIST_PROJECTION = "title description severity status assignedVolunteer.uid assignedVolunteer.fullName acceptedAt resolvedAt volunteerProgress progressUpdatedAt location address landmark date reporterName reporterUid imageUrls assistance.status assistance.acceptedByName assistance.acceptedByPhone";
 
 // Public detail projection — used by GET /:id.
 // Excludes all PII that must not be visible to unauthenticated callers:
@@ -63,7 +66,8 @@ const REPORT_DETAIL_PROJECTION = "title description severity status " +
     "assignedVolunteer.uid assignedVolunteer.fullName " +
     "acceptedAt resolvedAt volunteerProgress progressUpdatedAt " +
     "location address landmark date reporterName reporterUid imageUrls " +
-    "resolutionRemark resolutionDetails";
+    "resolutionRemark resolutionDetails " +
+    "assistance.status assistance.acceptedByName assistance.acceptedByPhone";
 
 // NOTE: requireAuth is applied per-route below.
 // GET /api/reports and GET /api/reports/:id are intentionally public
@@ -610,7 +614,14 @@ router.patch("/:id/resolve", requireAuth, async (req, res) => {
                         note: resolutionNote,
                         resolvedAt: new Date(),
                         resolvedByUid: uid
-                    }
+                    },
+                    "assistance.status": "none",
+                    "assistance.requestedByUid": null,
+                    "assistance.requestedAt": null,
+                    "assistance.acceptedByUid": null,
+                    "assistance.acceptedAt": null,
+                    "assistance.acceptedByName": "",
+                    "assistance.acceptedByPhone": ""
                 }
             },
             { new: true }
@@ -723,7 +734,14 @@ router.patch("/:id/cancel", requireAuth, async (req, res) => {
             req.params.id,
             {
                 $set: {
-                    status: "pending"
+                    status: "pending",
+                    "assistance.status": "none",
+                    "assistance.requestedByUid": null,
+                    "assistance.requestedAt": null,
+                    "assistance.acceptedByUid": null,
+                    "assistance.acceptedAt": null,
+                    "assistance.acceptedByName": "",
+                    "assistance.acceptedByPhone": ""
                 },
                 $unset: {
                     assignedVolunteer: "",
@@ -1071,6 +1089,135 @@ router.post("/:id/abuse", abuseReportLimiter, requireAuth, requireActiveUser, as
             success: false,
             message: error.message
         });
+    }
+});
+
+// REQUEST ASSISTANCE — protected (assigned volunteer only)
+router.patch("/:id/request-assistance", requireAuth, async (req, res) => {
+    try {
+        const uid = req.authUid;
+        const report = await Report.findById(req.params.id);
+
+        if (!report) {
+            return res.status(404).json({ success: false, message: "Report not found" });
+        }
+
+        if (report.status !== "accepted") {
+            return res.status(409).json({ success: false, message: "Report is not active." });
+        }
+
+        if (report.assignedVolunteer?.uid !== uid) {
+            return res.status(403).json({ success: false, message: "Only the assigned volunteer can request assistance." });
+        }
+
+        if (report.assistance?.status === "pending" || report.assistance?.status === "accepted") {
+            return res.status(409).json({ success: false, message: "Assistance is already requested or accepted." });
+        }
+
+        const volunteersExist = await checkNearbyPaidVolunteersExist(report);
+        if (!volunteersExist) {
+            return res.status(404).json({ success: false, message: "No approved paid volunteers are available nearby." });
+        }
+
+        const updatedReport = await Report.findByIdAndUpdate(
+            req.params.id,
+            {
+                $set: {
+                    "assistance.status": "pending",
+                    "assistance.requestedByUid": uid,
+                    "assistance.requestedAt": new Date()
+                }
+            },
+            { new: true }
+        );
+
+        await notifyNearbyPaidVolunteers(updatedReport);
+
+        return res.status(200).json({ success: true, report: updatedReport });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// ACCEPT ASSISTANCE — protected (paid volunteer only)
+router.patch("/:id/accept-assistance", requireAuth, async (req, res) => {
+    try {
+        const uid = req.authUid;
+        const user = await User.findOne({ uid });
+
+        if (!user || !user.isPaidVolunteer || user.paidVolunteerStatus !== "approved" || !user.isAvailable) {
+            return res.status(403).json({ success: false, message: "Only available and approved paid volunteers can accept assistance." });
+        }
+
+        if (user.isSuspended || user.paidVolunteerStatus === "suspended") {
+            return res.status(403).json({ success: false, message: "Your paid volunteer account is suspended." });
+        }
+
+        const report = await Report.findById(req.params.id);
+        if (!report) {
+            return res.status(404).json({ success: false, message: "Report not found" });
+        }
+
+        if (report.assistance?.requestedByUid === uid) {
+            return res.status(403).json({ success: false, message: "You cannot accept your own assistance request." });
+        }
+
+        const distanceKm = calculateDistanceKm(
+            user.location?.coordinates,
+            report.location?.coordinates
+        );
+
+        if (distanceKm === null) {
+            return res.status(400).json({ success: false, message: "Unable to verify distance." });
+        }
+
+        const rRadius = user.rescueRadius || 10;
+        if (distanceKm > rRadius) {
+            return res.status(403).json({ success: false, message: "You are outside your rescue radius for this report." });
+        }
+
+        const updatedReport = await Report.findOneAndUpdate(
+            { _id: req.params.id, "assistance.status": "pending" },
+            {
+                $set: {
+                    "assistance.status": "accepted",
+                    "assistance.acceptedByUid": uid,
+                    "assistance.acceptedAt": new Date(),
+                    "assistance.acceptedByName": user.fullName,
+                    "assistance.acceptedByPhone": user.phone
+                }
+            },
+            { new: true }
+        );
+
+        if (!updatedReport) {
+            return res.status(409).json({ success: false, message: "This assistance request has already been claimed or is no longer available." });
+        }
+
+        if (updatedReport.assistance?.requestedByUid) {
+            const requesterUser = await User.findOne({ uid: updatedReport.assistance.requestedByUid }).select("deviceToken");
+            
+            await createNotification({
+                recipientUid: updatedReport.assistance.requestedByUid,
+                type: "assistance_accepted",
+                title: "Assistance Accepted",
+                body: `Paid volunteer ${user.fullName} is on their way to help you.`,
+                data: {
+                    reportId: String(updatedReport._id),
+                    reportTitle: updatedReport.title || "",
+                    status: updatedReport.status || "accepted"
+                },
+                deviceToken: requesterUser?.deviceToken || null,
+                context: {
+                    uid: updatedReport.assistance.requestedByUid,
+                    fullName: ""
+                }
+            });
+        }
+
+        return res.status(200).json({ success: true, report: updatedReport });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
     }
 });
 

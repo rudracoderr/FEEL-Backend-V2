@@ -86,6 +86,35 @@ const userSchema = new mongoose.Schema({
         default: null
     },
 
+    // ── Paid Volunteer ─────────────────────────────────────────────────────
+    // isPaidVolunteer is a separate identity flag from isVolunteer.
+    // A paid volunteer has their own approval lifecycle (paidVolunteerStatus)
+    // that runs in parallel to the regular volunteer lifecycle.
+    // IMPORTANT: Do NOT repurpose isVolunteer or volunteerStatus for this.
+
+    isPaidVolunteer: {
+        type: Boolean,
+        default: false
+    },
+
+    paidVolunteerStatus: {
+        type: String,
+        enum: ["none", "pending", "approved", "rejected", "suspended"],
+        default: "none"
+    },
+
+    rescueRadius: {
+        type: Number,
+        default: 10
+    },
+
+    isAvailable: {
+        type: Boolean,
+        default: true
+    },
+
+    // ───────────────────────────────────────────────────────────────────────
+
     createdAt: {
         type: Date,
         default: Date.now

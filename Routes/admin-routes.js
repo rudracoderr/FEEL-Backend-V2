@@ -23,7 +23,14 @@ function getAdminReportStatusUpdate(status, options = {}) {
     if (status === "pending") {
         return {
             $set: {
-                status: "pending"
+                status: "pending",
+                "assistance.status": "none",
+                "assistance.requestedByUid": null,
+                "assistance.requestedAt": null,
+                "assistance.acceptedByUid": null,
+                "assistance.acceptedAt": null,
+                "assistance.acceptedByName": "",
+                "assistance.acceptedByPhone": ""
             },
             $unset: {
                 assignedVolunteer: "",
@@ -49,7 +56,14 @@ function getAdminReportStatusUpdate(status, options = {}) {
     if (status === "fake") {
         return {
             $set: {
-                status: "fake"
+                status: "fake",
+                "assistance.status": "none",
+                "assistance.requestedByUid": null,
+                "assistance.requestedAt": null,
+                "assistance.acceptedByUid": null,
+                "assistance.acceptedAt": null,
+                "assistance.acceptedByName": "",
+                "assistance.acceptedByPhone": ""
             },
             $unset: {
                 assignedVolunteer: "",

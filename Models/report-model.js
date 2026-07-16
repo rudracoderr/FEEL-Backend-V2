@@ -157,8 +157,62 @@ const reportSchema = new mongoose.Schema({
             },
             message: "At least one report image is required"
         }
+    },
+
+    // ── Paid Volunteer Assistance ───────────────────────────────────────────
+    // A single paid volunteer may assist the assigned regular volunteer.
+    // Only one paid volunteer can accept per report (enforced at the API layer
+    // via an atomic findOneAndUpdate filter on assistance.status === "pending").
+    //
+    // status lifecycle:
+    //   none → pending (volunteer requests) → accepted (paid volunteer accepts)
+    //                                        → cancelled (volunteer cancels request)
+    //
+    // Contact snapshot fields mirror the assignedVolunteer pattern so the
+    // assigned volunteer can display paid volunteer contact without a DB lookup.
+
+    assistance: {
+
+        status: {
+            type: String,
+            enum: ["none", "pending", "accepted"],
+            default: "none"
+        },
+
+        requestedByUid: {
+            type: String,
+            default: null
+        },
+
+        requestedAt: {
+            type: Date,
+            default: null
+        },
+
+        acceptedByUid: {
+            type: String,
+            default: null
+        },
+
+        acceptedAt: {
+            type: Date,
+            default: null
+        },
+
+        // Contact snapshots — stored at accept-time, mirrors assignedVolunteer pattern
+        acceptedByName: {
+            type: String,
+            default: ""
+        },
+
+        acceptedByPhone: {
+            type: String,
+            default: ""
+        }
+
     }
-    
+
+    // ───────────────────────────────────────────────────────────────────────
 
 });
 

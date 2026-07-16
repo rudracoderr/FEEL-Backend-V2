@@ -4,6 +4,18 @@ const Notification = require("../Models/notification-model");
 const admin = require("../firebase-admin");
 
 const REPORT_RADIUS_KM = 10; // Define the radius in kilometers for nearby users
+const MAX_SYSTEM_RADIUS_KM = 50; // Max search radius before in-memory filtering
+
+function calculateDistanceKm(lat1, lon1, lat2, lon2) {
+    const R = 6371; // km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+}
 
 function isStaleTokenError(error) {
     const errorCode = error?.code || "";
@@ -347,7 +359,117 @@ async function createNotification({
 }
 
 module.exports = {
+    createNotification
+};
+
+async function getPaidVolunteersInRange(report) {
+    if (!report || !report.location || !Array.isArray(report.location.coordinates)) {
+        return [];
+    }
+
+    const [longitude, latitude] = report.location.coordinates;
+    const reporterUid = typeof report.reporterUid === "string" ? report.reporterUid.trim() : "";
+    const assignedUid = report.assignedVolunteer?.uid || "";
+
+    const query = {
+        isPaidVolunteer: true,
+        paidVolunteerStatus: "approved",
+        isAvailable: true,
+        deviceToken: { $exists: true, $ne: "" },
+        location: {
+            $near: {
+                $geometry: {
+                    type: "Point",
+                    coordinates: [longitude, latitude]
+                },
+                $maxDistance: MAX_SYSTEM_RADIUS_KM * 1000
+            }
+        }
+    };
+
+    const candidates = await User.find(query).select("uid deviceToken fullName location rescueRadius");
+    
+    // Filter out the reporter, the assigned volunteer, and strictly enforce rescueRadius
+    return candidates.filter(user => {
+        if (reporterUid && String(user.uid) === reporterUid) return false;
+        if (assignedUid && String(user.uid) === assignedUid) return false;
+
+        if (user.location && Array.isArray(user.location.coordinates)) {
+            const [uLon, uLat] = user.location.coordinates;
+            const dist = calculateDistanceKm(latitude, longitude, uLat, uLon);
+            const rRadius = user.rescueRadius || 10;
+            return dist <= rRadius;
+        }
+        return false;
+    });
+}
+
+async function checkNearbyPaidVolunteersExist(report) {
+    try {
+        const matchingUsers = await getPaidVolunteersInRange(report);
+        return matchingUsers.length > 0;
+    } catch (error) {
+        console.error("Error checking nearby paid volunteers:", error);
+        return false;
+    }
+}
+
+async function notifyNearbyPaidVolunteers(report) {
+    try {
+        const recipients = await getPaidVolunteersInRange(report);
+
+        if (!recipients.length) {
+            console.log("No approved paid volunteers found within their rescue radii for report:", report._id);
+            return { notifiedCount: 0 };
+        }
+
+        const tokens = [...new Set(recipients.map(u => u.deviceToken).filter(Boolean))];
+        if (!tokens.length) return { notifiedCount: 0 };
+
+        const locationSummary = [report.address, report.landmark].filter(Boolean).join(" • ");
+        
+        console.log(`Sending assistance requests to ${tokens.length} paid volunteers for report ${report._id}`);
+
+        const fcmResponse = await admin.messaging().sendEachForMulticast({
+            tokens,
+            notification: {
+                title: "Assistance Requested",
+                body: `A volunteer needs help with a rescue at ${locationSummary || "your area"}.`
+            },
+            data: {
+                reportId: String(report._id || ""),
+                type: "assistance_requested"
+            },
+            webpush: { fcmOptions: { link: "/" } }
+        });
+
+        // Create in-app notifications for these users
+        for (const user of recipients) {
+            await createNotification({
+                recipientUid: user.uid,
+                type: "assistance_requested",
+                title: "Assistance Requested",
+                body: `A volunteer needs help with a rescue at ${locationSummary || "your area"}.`,
+                data: {
+                    reportId: String(report._id || ""),
+                    reportTitle: report.title || "",
+                    reportAddress: report.address || ""
+                }
+            });
+        }
+
+        return { notifiedCount: fcmResponse.successCount };
+    } catch (error) {
+        console.error("Error notifying paid volunteers:", error);
+        return { notifiedCount: 0, error: error.message };
+    }
+}
+
+module.exports = {
     notifyUsersWithinRadius,
     sendNotificationToToken,
-    createNotification
+    createNotification,
+    checkNearbyPaidVolunteersExist,
+    notifyNearbyPaidVolunteers,
+    calculateDistanceKm
 };

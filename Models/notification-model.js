@@ -13,12 +13,20 @@ const notificationSchema = new mongoose.Schema({
             "self_accepted",
             "admin_reassigned",
             "admin_unassigned",
-            "rescue_progress",
-            "rescue_on_the_way",
-            "rescue_reached_location",
-            "rescue_completed_reporter",
-            "rescue_completed",
-            "volunteer_accepted"
+
+            "adoption_application",
+            "adoption_approved",
+            "adoption_rejected",
+            "adoption_reservation_cancelled",
+
+            // ── Paid volunteer assistance ─────────────────────────────────
+            // assistance_requested: sent to nearby approved paid volunteers
+            //   when the assigned regular volunteer taps "Request Assistance".
+            // assistance_accepted: sent to the assigned regular volunteer
+            //   when a paid volunteer accepts the assistance request.
+            "assistance_requested",
+            "assistance_accepted"
+            // ─────────────────────────────────────────────────────────────────────
         ],
         required: true
     },
