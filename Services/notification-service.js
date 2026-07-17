@@ -472,5 +472,6 @@ module.exports = {
     createNotification,
     checkNearbyPaidVolunteersExist,
     notifyNearbyPaidVolunteers,
-    calculateDistanceKm
+    calculateDistanceKm,
+    getPaidVolunteersInRange
 };
