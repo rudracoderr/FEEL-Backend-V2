@@ -12,8 +12,7 @@ const {
     createNotification,
     checkNearbyPaidVolunteersExist,
     notifyNearbyPaidVolunteers,
-    getPaidVolunteersInRange,
-    calculateDistanceKm
+    getPaidVolunteersInRange
 } = require("../Services/notification-service");
 const requireAuth = require("../middleware/requireAuth");
 const requireActiveUser = require("../middleware/requireActiveUser");
@@ -387,7 +386,7 @@ router.get("/:id/nearby-paid-volunteers", async (req, res) => {
         const mappedVolunteers = volunteers.map(v => {
             const [vLng, vLat] = v.location.coordinates;
             // Haversine distance in kilometers
-            const distanceKmVal = calculateDistanceKm(rLat, rLng, vLat, vLng);
+            const distanceKmVal = calculateDistanceKm([rLng, rLat], [vLng, vLat]);
             
             return {
                 uid: v.uid,
