@@ -12,7 +12,7 @@ const {
     createNotification,
     checkNearbyPaidVolunteersExist,
     notifyNearbyPaidVolunteers,
-    calculateDistanceKm
+    getPaidVolunteersInRange
 } = require("../Services/notification-service");
 const requireAuth = require("../middleware/requireAuth");
 const requireActiveUser = require("../middleware/requireActiveUser");
@@ -249,6 +249,10 @@ router.get("/", async (req, res) => {
             };
         }
 
+        if (req.query.assistancePending === 'true') {
+            query["assistance.status"] = "pending";
+        }
+
         const reports = await Report.find(query).select(REPORT_LIST_PROJECTION).lean();
         return res.status(200).json(reports);
     } catch (error) {
@@ -277,9 +281,18 @@ router.get("/claimed/:uid", requireAuth, async (req, res) => {
             });
         }
 
-        const reports = await Report.find({
-            "assignedVolunteer.uid": req.authUid
-        }).sort({
+        let query = { "assignedVolunteer.uid": req.authUid };
+        
+        if (req.query.includeAssisting === 'true') {
+            query = {
+                $or: [
+                    { "assignedVolunteer.uid": req.authUid },
+                    { "assistance.acceptedByUid": req.authUid }
+                ]
+            };
+        }
+
+        const reports = await Report.find(query).sort({
             resolvedAt: -1,
             acceptedAt: -1,
             date: -1,
@@ -352,6 +365,55 @@ router.get("/:id", async (req, res) => {
         });
     }
 });
+
+// GET NEARBY PAID VOLUNTEERS FOR A SPECIFIC REPORT
+router.get("/:id/nearby-paid-volunteers", async (req, res) => {
+    try {
+        const report = await Report.findById(req.params.id).lean();
+
+        if (!report) {
+            return res.status(404).json({
+                success: false,
+                message: "Report not found"
+            });
+        }
+
+        const volunteers = await getPaidVolunteersInRange(report);
+
+        // Calculate exact distance for display
+        const [rLng, rLat] = report.location.coordinates;
+        
+        const mappedVolunteers = volunteers.map(v => {
+            const [vLng, vLat] = v.location.coordinates;
+            // Haversine distance in meters
+            const distance = getDistance(
+                { latitude: rLat, longitude: rLng },
+                { latitude: vLat, longitude: vLng }
+            );
+            
+            return {
+                uid: v.uid,
+                fullName: v.fullName,
+                phone: v.phone,
+                distanceKm: (distance / 1000).toFixed(1)
+            };
+        });
+
+        // Sort by closest first
+        mappedVolunteers.sort((a, b) => parseFloat(a.distanceKm) - parseFloat(b.distanceKm));
+
+        return res.status(200).json({
+            success: true,
+            volunteers: mappedVolunteers
+        });
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
 
 // ACCEPT REPORT BY VOLUNTEER — protected
 router.patch("/:id/accept", requireAuth, async (req, res) => {

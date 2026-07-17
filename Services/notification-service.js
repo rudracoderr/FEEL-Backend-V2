@@ -359,7 +359,8 @@ async function createNotification({
 }
 
 module.exports = {
-    createNotification
+    createNotification,
+    getPaidVolunteersInRange
 };
 
 async function getPaidVolunteersInRange(report) {
@@ -387,7 +388,7 @@ async function getPaidVolunteersInRange(report) {
         }
     };
 
-    const candidates = await User.find(query).select("uid deviceToken fullName location rescueRadius");
+    const candidates = await User.find(query).select("uid deviceToken fullName phone location rescueRadius");
     
     // Filter out the reporter, the assigned volunteer, and strictly enforce rescueRadius
     return candidates.filter(user => {

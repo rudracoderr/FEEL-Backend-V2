@@ -154,6 +154,65 @@ router.patch("/:uid/device-token", async (req, res) => {
         });
     }
 });
+// UPDATE AVAILABILITY
+router.patch("/:uid/availability", async (req, res) => {
+    try {
+        const { uid } = req.params;
+        const { isAvailable } = req.body;
+
+        if (!uid) {
+            return res.status(400).json({
+                success: false,
+                message: "uid is required"
+            });
+        }
+
+        if (uid !== req.authUid) {
+            return res.status(403).json({
+                success: false,
+                message: "Forbidden"
+            });
+        }
+
+        if (typeof isAvailable !== "boolean") {
+            return res.status(400).json({
+                success: false,
+                message: "isAvailable must be a boolean"
+            });
+        }
+
+        const updatedUser = await User.findOneAndUpdate(
+            { uid: req.authUid },
+            {
+                $set: {
+                    isAvailable: isAvailable
+                }
+            },
+            {
+                new: true,
+                runValidators: true
+            }
+        );
+
+        if (!updatedUser) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Availability updated successfully",
+            user: updatedUser
+        });
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
 
 // GET USER BY FIREBASE UID
 router.get("/:uid", async (req, res) => {
