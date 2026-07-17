@@ -282,7 +282,7 @@ router.get("/claimed/:uid", requireAuth, async (req, res) => {
         }
 
         let query = { "assignedVolunteer.uid": req.authUid };
-        
+
         if (req.query.includeAssisting === 'true') {
             query = {
                 $or: [
@@ -367,49 +367,51 @@ router.get("/:id", async (req, res) => {
 });
 
 // GET NEARBY PAID VOLUNTEERS FOR A SPECIFIC REPORT
-router.get("/:id/nearby-paid-volunteers", async (req, res) => {
-    try {
-        const report = await Report.findById(req.params.id).lean();
+router.get("/:id/nearby-paid-volunteers",
+    requireAuth,
+    requireActiveUser, async (req, res) => {
+        try {
+            const report = await Report.findById(req.params.id).lean();
 
-        if (!report) {
-            return res.status(404).json({
+            if (!report) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Report not found"
+                });
+            }
+
+            const volunteers = await getPaidVolunteersInRange(report);
+
+            // Calculate exact distance for display
+            const [rLng, rLat] = report.location.coordinates;
+
+            const mappedVolunteers = volunteers.map(v => {
+                const [vLng, vLat] = v.location.coordinates;
+                // Haversine distance in kilometers
+                const distanceKmVal = calculateDistanceKm([rLng, rLat], [vLng, vLat]);
+
+                return {
+                    uid: v.uid,
+                    fullName: v.fullName,
+                    phone: v.phone,
+                    distanceKm: distanceKmVal.toFixed(1)
+                };
+            });
+
+            // Sort by closest first
+            mappedVolunteers.sort((a, b) => parseFloat(a.distanceKm) - parseFloat(b.distanceKm));
+
+            return res.status(200).json({
+                success: true,
+                volunteers: mappedVolunteers
+            });
+        } catch (error) {
+            return res.status(500).json({
                 success: false,
-                message: "Report not found"
+                message: error.message
             });
         }
-
-        const volunteers = await getPaidVolunteersInRange(report);
-
-        // Calculate exact distance for display
-        const [rLng, rLat] = report.location.coordinates;
-        
-        const mappedVolunteers = volunteers.map(v => {
-            const [vLng, vLat] = v.location.coordinates;
-            // Haversine distance in kilometers
-            const distanceKmVal = calculateDistanceKm([rLng, rLat], [vLng, vLat]);
-            
-            return {
-                uid: v.uid,
-                fullName: v.fullName,
-                phone: v.phone,
-                distanceKm: distanceKmVal.toFixed(1)
-            };
-        });
-
-        // Sort by closest first
-        mappedVolunteers.sort((a, b) => parseFloat(a.distanceKm) - parseFloat(b.distanceKm));
-
-        return res.status(200).json({
-            success: true,
-            volunteers: mappedVolunteers
-        });
-    } catch (error) {
-        return res.status(500).json({
-            success: false,
-            message: error.message
-        });
-    }
-});
+    });
 
 
 // ACCEPT REPORT BY VOLUNTEER — protected
@@ -1255,7 +1257,7 @@ router.patch("/:id/accept-assistance", requireAuth, async (req, res) => {
 
         if (updatedReport.assistance?.requestedByUid) {
             const requesterUser = await User.findOne({ uid: updatedReport.assistance.requestedByUid }).select("deviceToken");
-            
+
             await createNotification({
                 recipientUid: updatedReport.assistance.requestedByUid,
                 type: "assistance_accepted",
