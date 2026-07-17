@@ -381,13 +381,7 @@ router.get("/:id/nearby-paid-volunteers", async (req, res) => {
 
         const volunteers = await getPaidVolunteersInRange(report);
 
-        if (!report.location || !report.location.coordinates) {
-            return res.status(400).json({
-                success: false,
-                message: "Report has no location data"
-            });
-        }
-
+        // Calculate exact distance for display
         const [rLng, rLat] = report.location.coordinates;
         
         const mappedVolunteers = volunteers.map(v => {
