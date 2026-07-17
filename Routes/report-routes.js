@@ -1175,10 +1175,12 @@ router.patch("/:id/request-assistance", requireAuth, async (req, res) => {
             return res.status(409).json({ success: false, message: "Assistance is already requested or accepted." });
         }
 
-        const volunteersExist = await checkNearbyPaidVolunteersExist(report);
-        if (!volunteersExist) {
+        const volunteers = await getPaidVolunteersInRange(report);
+        if (!volunteers || volunteers.length === 0) {
             return res.status(404).json({ success: false, message: "No approved paid volunteers are available nearby." });
         }
+
+        const notifiedUids = volunteers.map(v => v.uid);
 
         const updatedReport = await Report.findByIdAndUpdate(
             req.params.id,
@@ -1186,7 +1188,9 @@ router.patch("/:id/request-assistance", requireAuth, async (req, res) => {
                 $set: {
                     "assistance.status": "pending",
                     "assistance.requestedByUid": uid,
-                    "assistance.requestedAt": new Date()
+                    "assistance.requestedAt": new Date(),
+                    "assistance.notifiedVolunteerCount": notifiedUids.length,
+                    "assistance.notifiedVolunteerUids": notifiedUids
                 }
             },
             { new: true }

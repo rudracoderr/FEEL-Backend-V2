@@ -208,6 +208,16 @@ const reportSchema = new mongoose.Schema({
         acceptedByPhone: {
             type: String,
             default: ""
+        },
+
+        notifiedVolunteerCount: {
+            type: Number,
+            default: 0
+        },
+
+        notifiedVolunteerUids: {
+            type: [String],
+            default: []
         }
 
     }
