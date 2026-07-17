@@ -2,6 +2,8 @@ const express = require("express");
 const mongoose = require("mongoose");
 
 const router = express.Router();
+const validateMongoId = require("../middleware/validateObjectId");
+router.param("id", validateMongoId("id"));
 
 const User = require("../Models/usermodel");
 const Report = require("../Models/report-model");

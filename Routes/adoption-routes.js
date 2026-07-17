@@ -1,5 +1,7 @@
 const express = require("express");
 const router = express.Router();
+const validateMongoId = require("../middleware/validateObjectId");
+router.param("id", validateMongoId("id"));
 
 const AdoptionListing = require("../Models/adoption-listing-model");
 const requireAuth = require("../middleware/requireAuth");

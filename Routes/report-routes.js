@@ -2,6 +2,8 @@ const express = require("express");
 const { rateLimit } = require("express-rate-limit");
 
 const router = express.Router();
+const validateMongoId = require("../middleware/validateObjectId");
+router.param("id", validateMongoId("id"));
 
 const Report = require("../Models/report-model");
 const User = require("../Models/usermodel");
