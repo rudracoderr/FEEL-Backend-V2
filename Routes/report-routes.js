@@ -12,7 +12,8 @@ const {
     createNotification,
     checkNearbyPaidVolunteersExist,
     notifyNearbyPaidVolunteers,
-    getPaidVolunteersInRange
+    getPaidVolunteersInRange,
+    calculateDistanceKm
 } = require("../Services/notification-service");
 const requireAuth = require("../middleware/requireAuth");
 const requireActiveUser = require("../middleware/requireActiveUser");
@@ -380,22 +381,25 @@ router.get("/:id/nearby-paid-volunteers", async (req, res) => {
 
         const volunteers = await getPaidVolunteersInRange(report);
 
-        // Calculate exact distance for display
+        if (!report.location || !report.location.coordinates) {
+            return res.status(400).json({
+                success: false,
+                message: "Report has no location data"
+            });
+        }
+
         const [rLng, rLat] = report.location.coordinates;
         
         const mappedVolunteers = volunteers.map(v => {
             const [vLng, vLat] = v.location.coordinates;
-            // Haversine distance in meters
-            const distance = getDistance(
-                { latitude: rLat, longitude: rLng },
-                { latitude: vLat, longitude: vLng }
-            );
+            // Haversine distance in kilometers
+            const distanceKmVal = calculateDistanceKm(rLat, rLng, vLat, vLng);
             
             return {
                 uid: v.uid,
                 fullName: v.fullName,
                 phone: v.phone,
-                distanceKm: (distance / 1000).toFixed(1)
+                distanceKm: distanceKmVal.toFixed(1)
             };
         });
 
