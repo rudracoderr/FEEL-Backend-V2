@@ -64,7 +64,8 @@ const REPORT_LIST_PROJECTION = {
     acceptedAt: 1, resolvedAt: 1, volunteerProgress: 1, progressUpdatedAt: 1,
     location: 1, address: 1, landmark: 1, date: 1,
     reporterName: 1, reporterUid: 1, imageUrls: 1,
-    "assistance.status": 1, "assistance.acceptedByName": 1, "assistance.acceptedByPhone": 1
+    "assistance.status": 1, "assistance.requestedAt": 1,
+    "assistance.acceptedByUid": 1, "assistance.acceptedByName": 1, "assistance.acceptedByPhone": 1
 };
 
 // Public detail projection — used by GET /:id for unauthenticated callers.
@@ -77,7 +78,8 @@ const REPORT_DETAIL_PROJECTION = {
     location: 1, address: 1, landmark: 1, date: 1,
     reporterName: 1, reporterUid: 1, imageUrls: 1,
     resolutionRemark: 1, resolutionDetails: 1,
-    "assistance.status": 1, "assistance.acceptedByName": 1, "assistance.acceptedByPhone": 1
+    "assistance.status": 1, "assistance.requestedAt": 1,
+    "assistance.acceptedByUid": 1, "assistance.acceptedByName": 1, "assistance.acceptedByPhone": 1
 };
 
 // Extended detail projection for approved paid volunteers.
