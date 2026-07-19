@@ -57,19 +57,36 @@ const abuseReportLimiter = rateLimit({
 
 const ACCEPT_RADIUS_KM = 10;
 
-const REPORT_LIST_PROJECTION = "title description severity status assignedVolunteer.uid assignedVolunteer.fullName acceptedAt resolvedAt volunteerProgress progressUpdatedAt location address landmark date reporterName reporterUid imageUrls assistance.status assistance.acceptedByName assistance.acceptedByPhone";
+// Shared fields included in all report list responses.
+const REPORT_LIST_PROJECTION = {
+    title: 1, description: 1, severity: 1, status: 1,
+    "assignedVolunteer.uid": 1, "assignedVolunteer.fullName": 1,
+    acceptedAt: 1, resolvedAt: 1, volunteerProgress: 1, progressUpdatedAt: 1,
+    location: 1, address: 1, landmark: 1, date: 1,
+    reporterName: 1, reporterUid: 1, imageUrls: 1,
+    "assistance.status": 1, "assistance.acceptedByName": 1, "assistance.acceptedByPhone": 1
+};
 
-// Public detail projection — used by GET /:id.
-// Excludes all PII that must not be visible to unauthenticated callers:
-//   reporterContact, reporterDeviceToken, assignedVolunteer.phone, assignedVolunteer.email.
-// reporterUid is retained because RescueDetailsModal uses it client-side to
-// determine whether the viewer is the reporter (to gate the volunteer contact UI).
-const REPORT_DETAIL_PROJECTION = "title description severity status " +
-    "assignedVolunteer.uid assignedVolunteer.fullName " +
-    "acceptedAt resolvedAt volunteerProgress progressUpdatedAt " +
-    "location address landmark date reporterName reporterUid imageUrls " +
-    "resolutionRemark resolutionDetails " +
-    "assistance.status assistance.acceptedByName assistance.acceptedByPhone";
+// Public detail projection — used by GET /:id for unauthenticated callers.
+// Strips all PII: reporterContact, reporterDeviceToken, assignedVolunteer.phone, assignedVolunteer.email.
+// reporterUid is retained for client-side reporter/volunteer gate logic.
+const REPORT_DETAIL_PROJECTION = {
+    title: 1, description: 1, severity: 1, status: 1,
+    "assignedVolunteer.uid": 1, "assignedVolunteer.fullName": 1,
+    acceptedAt: 1, resolvedAt: 1, volunteerProgress: 1, progressUpdatedAt: 1,
+    location: 1, address: 1, landmark: 1, date: 1,
+    reporterName: 1, reporterUid: 1, imageUrls: 1,
+    resolutionRemark: 1, resolutionDetails: 1,
+    "assistance.status": 1, "assistance.acceptedByName": 1, "assistance.acceptedByPhone": 1
+};
+
+// Extended detail projection for approved paid volunteers.
+// Adds assignedVolunteer.phone so they can call the responding volunteer.
+// Phone is intentionally NOT in the public projection.
+const REPORT_DETAIL_PROJECTION_PAID_VOLUNTEER = {
+    ...REPORT_DETAIL_PROJECTION,
+    "assignedVolunteer.phone": 1
+};
 
 // NOTE: requireAuth is applied per-route below.
 // GET /api/reports and GET /api/reports/:id are intentionally public
@@ -350,21 +367,68 @@ router.get("/by-reporter/:uid", requireAuth, async (req, res) => {
 });
 
 // GET REPORT BY ID
+// Public route — but optionally reads the Bearer token to decide projection.
+// Approved paid volunteers receive assignedVolunteer.phone; all other callers do not.
 router.get("/:id", async (req, res) => {
     try {
-        const report = await Report.findById(req.params.id).select(REPORT_DETAIL_PROJECTION).lean();
+        let isPaidVolunteer = false;
+        const authHeader = req.headers.authorization || "";
+
+        // ── DIAGNOSTIC LOG 1: raw Authorization header ─────────────────────
+        console.log("[GET /:id] Authorization header:", authHeader ? authHeader.substring(0, 30) + "…" : "(none)");
+
+        const tokenMatch = /^Bearer\s+(.+)$/i.exec(authHeader);
+
+        if (tokenMatch) {
+            try {
+                const admin = require("../firebase-admin");
+                if (admin.isFirebaseAdminInitialized()) {
+                    const decoded = await admin.auth().verifyIdToken(tokenMatch[1]);
+                    if (decoded?.uid) {
+                        const caller = await User.findOne({ uid: decoded.uid })
+                            .select({ isPaidVolunteer: 1, paidVolunteerStatus: 1 })
+                            .lean();
+
+                        // ── DIAGNOSTIC LOG 2: user lookup result ───────────────────────
+                        console.log("[GET /:id] User lookup result:", {
+                            uid: decoded.uid,
+                            isPaidVolunteer: caller?.isPaidVolunteer,
+                            status: caller?.paidVolunteerStatus
+                        });
+
+                        if (caller?.isPaidVolunteer === true && caller?.paidVolunteerStatus === "approved") {
+                            isPaidVolunteer = true;
+                        }
+                    }
+                }
+            } catch (authErr) {
+                // Missing/expired token — treat as unauthenticated
+                console.log(`[GET /:id] optional auth skipped: ${authErr.message}`);
+            }
+        }
+
+        const projection = isPaidVolunteer
+            ? REPORT_DETAIL_PROJECTION_PAID_VOLUNTEER
+            : REPORT_DETAIL_PROJECTION;
+
+        // ── DIAGNOSTIC LOG 3: projection chosen ────────────────────────────
+        console.log("[GET /:id] Projection chosen:", { isPaidVolunteer, projection });
+
+        const report = await Report.findById(req.params.id).select(projection).lean();
 
         if (!report) {
-            return res.status(404).json({
-                error: "Report not found"
-            });
+            return res.status(404).json({ error: "Report not found" });
         }
+
+        // ── DIAGNOSTIC LOG 4: raw Mongo document assignedVolunteer ─────────
+        console.log("[GET /:id] Mongo report.assignedVolunteer:", JSON.stringify(report.assignedVolunteer));
+
+        // ── DIAGNOSTIC LOG 5: full response payload ─────────────────────────
+        console.log("[GET /:id] Final response assignedVolunteer keys:", Object.keys(report.assignedVolunteer || {}));
 
         return res.status(200).json(report);
     } catch (error) {
-        return res.status(400).json({
-            error: error.message
-        });
+        return res.status(400).json({ error: error.message });
     }
 });
 
@@ -453,7 +517,8 @@ router.patch("/:id/accept", requireAuth, async (req, res) => {
             });
         }
 
-        if (!user.isVolunteer) {
+        const isApprovedPaidVolunteer = user.isPaidVolunteer === true && user.paidVolunteerStatus === "approved";
+        if (!user.isVolunteer && !isApprovedPaidVolunteer) {
             return res.status(403).json({
                 success: false,
                 message: "Only volunteers can accept rescue reports."

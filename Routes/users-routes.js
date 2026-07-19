@@ -158,7 +158,7 @@ router.patch("/:uid/device-token", async (req, res) => {
 router.patch("/:uid/availability", async (req, res) => {
     try {
         const { uid } = req.params;
-        const { isAvailable } = req.body;
+        const { isAvailable, location } = req.body;
 
         if (!uid) {
             return res.status(400).json({
@@ -181,13 +181,14 @@ router.patch("/:uid/availability", async (req, res) => {
             });
         }
 
+        const updateData = { isAvailable };
+        if (location && Array.isArray(location.coordinates) && location.coordinates.length === 2) {
+            updateData.location = location;
+        }
+
         const updatedUser = await User.findOneAndUpdate(
             { uid: req.authUid },
-            {
-                $set: {
-                    isAvailable: isAvailable
-                }
-            },
+            { $set: updateData },
             {
                 new: true,
                 runValidators: true
