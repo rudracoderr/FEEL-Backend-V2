@@ -175,7 +175,7 @@ const reportSchema = new mongoose.Schema({
 
         status: {
             type: String,
-            enum: ["none", "pending", "accepted"],
+            enum: ["none", "pending", "accepted", "completed"],
             default: "none"
         },
 
@@ -195,6 +195,11 @@ const reportSchema = new mongoose.Schema({
         },
 
         acceptedAt: {
+            type: Date,
+            default: null
+        },
+
+        completedAt: {
             type: Date,
             default: null
         },

@@ -271,6 +271,11 @@ router.get("/", async (req, res) => {
         if (req.query.assistancePending === 'true') {
             query["assistance.status"] = "pending";
         }
+        
+        if (req.query.assistanceAcceptedBy) {
+            query["assistance.status"] = "accepted";
+            query["assistance.acceptedByUid"] = req.query.assistanceAcceptedBy;
+        }
 
         const reports = await Report.find(query).select(REPORT_LIST_PROJECTION).lean();
         return res.status(200).json(reports);
@@ -726,32 +731,33 @@ router.patch("/:id/resolve", requireAuth, async (req, res) => {
                 message: "A resolution note is required."
             });
         }
+        const updateFields = {
+            status: "resolved",
+            resolvedAt: new Date(),
+            volunteerProgress: "Resolved",
+            progressUpdatedAt: new Date(),
+            resolutionRemark: resolutionNote,
+            resolvedBy: uid,
+            resolutionDetails: {
+                photoUrl: resolutionPhotoUrl,
+                note: resolutionNote,
+                resolvedAt: new Date(),
+                resolvedByUid: uid
+            }
+        };
+
+        if (report.assistance?.status === "accepted") {
+            updateFields["assistance.status"] = "completed";
+            updateFields["assistance.completedAt"] = new Date();
+        } else if (report.assistance?.status === "pending") {
+            updateFields["assistance.status"] = "none";
+            updateFields["assistance.requestedByUid"] = null;
+            updateFields["assistance.requestedAt"] = null;
+        }
 
         const updatedReport = await Report.findByIdAndUpdate(
             req.params.id,
-            {
-                $set: {
-                    status: "resolved",
-                    resolvedAt: new Date(),
-                    volunteerProgress: "Resolved",
-                    progressUpdatedAt: new Date(),
-                    resolutionRemark: resolutionNote,
-                    resolvedBy: uid,
-                    resolutionDetails: {
-                        photoUrl: resolutionPhotoUrl,
-                        note: resolutionNote,
-                        resolvedAt: new Date(),
-                        resolvedByUid: uid
-                    },
-                    "assistance.status": "none",
-                    "assistance.requestedByUid": null,
-                    "assistance.requestedAt": null,
-                    "assistance.acceptedByUid": null,
-                    "assistance.acceptedAt": null,
-                    "assistance.acceptedByName": "",
-                    "assistance.acceptedByPhone": ""
-                }
-            },
+            { $set: updateFields },
             { new: true }
         );
 
@@ -777,6 +783,30 @@ router.patch("/:id/resolve", requireAuth, async (req, res) => {
                 });
             } catch (repNotifyErr) {
                 console.error("Failed to notify reporter on resolve:", repNotifyErr);
+            }
+        }
+
+        if (report.assistance?.status === "accepted" && report.assistance?.acceptedByUid) {
+            try {
+                const paidVolunteer = await User.findOne({ uid: report.assistance.acceptedByUid }).select("deviceToken");
+                await createNotification({
+                    recipientUid: report.assistance.acceptedByUid,
+                    type: "rescue_completed",
+                    title: "🎉 Rescue Resolved",
+                    body: `The volunteer has successfully resolved the rescue you were assisting with.`,
+                    data: {
+                        reportId: String(updatedReport._id),
+                        reportTitle: updatedReport.title || "",
+                        status: "resolved"
+                    },
+                    deviceToken: paidVolunteer?.deviceToken || null,
+                    context: {
+                        uid: report.assistance.acceptedByUid,
+                        fullName: report.assistance.acceptedByName || ""
+                    }
+                });
+            } catch (err) {
+                console.error("Failed to notify paid volunteer on resolve:", err);
             }
         }
 
