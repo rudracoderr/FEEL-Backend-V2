@@ -9,6 +9,7 @@ const reportRoutes = require("./Routes/report-routes");
 const userRoutes = require("./Routes/users-routes");
 const adminRoutes = require("./Routes/admin-routes");
 const adoptionRoutes = require("./Routes/adoption-routes");
+const ngoRoutes = require("./Routes/ngo-routes");
 const admin = require("./firebase-admin");
 
 
@@ -51,6 +52,7 @@ app.use("/api/reports", reportRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/adoptions", adoptionRoutes);
+app.use("/api/ngo", ngoRoutes);
 
 app.get("/test-firebase-admin", (req, res) => {
    if (!admin.isFirebaseAdminInitialized()) {

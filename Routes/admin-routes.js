@@ -616,30 +616,72 @@ router.get("/ngos", async (req, res) => {
 
 // POST /api/admin/ngos
 router.post("/ngos", async (req, res) => {
+    const admin = require("../firebase-admin.js");
     try {
         const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
-        const contactEmail =
-            typeof req.body.contactEmail === "string" ? req.body.contactEmail.trim() : "";
+        const email = typeof req.body.email === "string" ? req.body.email.trim() : "";
+        const phone = typeof req.body.phone === "string" ? req.body.phone.trim() : "";
+        const address = typeof req.body.address === "string" ? req.body.address.trim() : "";
+        const password = req.body.password || "NGO@123456"; // Or generate a random one
 
-        if (!name || !contactEmail) {
+        if (!name || !email || !phone) {
             return res.status(400).json({
                 success: false,
-                message: "name and contactEmail are required"
+                message: "name, email, and phone are required"
             });
         }
 
-        const ngo = await Ngo.create({
-            name,
-            contactEmail,
-            phone: typeof req.body.phone === "string" ? req.body.phone.trim() : "",
-            city: typeof req.body.city === "string" ? req.body.city.trim() : "",
-            active: req.body.active !== false
-        });
+        // 1. Create Firebase Auth user
+        let userRecord;
+        try {
+            userRecord = await admin.auth().createUser({
+                email: email,
+                password: password,
+                displayName: name,
+                phoneNumber: phone.startsWith('+') ? phone : undefined // Firebase requires E.164 format for phone numbers
+            });
+        } catch (firebaseError) {
+            throw new Error(`Firebase Auth Error: ${firebaseError.message}`);
+        }
 
-        return res.status(201).json({
-            success: true,
-            ngo
-        });
+        try {
+            // 2. Create NGO document
+            const ngo = await Ngo.create({
+                name,
+                email,
+                phone,
+                address,
+                active: req.body.active !== false
+            });
+
+            // 3. Create User document in MongoDB
+            const user = await User.create({
+                uid: userRecord.uid,
+                email: email,
+                fullName: name,
+                phone: phone,
+                role: "ngo_admin",
+                ngoId: ngo._id,
+                location: { type: "Point", coordinates: [0, 0] }
+            });
+
+            return res.status(201).json({
+                success: true,
+                ngo,
+                user,
+                credentials: {
+                    email,
+                    password
+                }
+            });
+        } catch (mongoError) {
+            // Rollback Firebase creation if MongoDB fails
+            if (userRecord && userRecord.uid) {
+                await admin.auth().deleteUser(userRecord.uid);
+            }
+            throw new Error(`Database Error: ${mongoError.message}`);
+        }
+
     } catch (error) {
         return res.status(400).json({
             success: false,

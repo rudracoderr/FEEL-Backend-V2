@@ -41,8 +41,14 @@ const userSchema = new mongoose.Schema({
 
     role: {
         type: String,
-        enum: ["user", "admin"],
+        enum: ["user", "admin", "ngo_admin", "ngo_member"],
         default: "user"
+    },
+
+    ngoId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Ngo",
+        default: null
     },
 
     isSuspended: {
@@ -148,6 +154,7 @@ const userSchema = new mongoose.Schema({
 });
 
 userSchema.index({ location: "2dsphere" });
+userSchema.index({ ngoId: 1 });
 
 const User =mongoose.model("User", userSchema);
 

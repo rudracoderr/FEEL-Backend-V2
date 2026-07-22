@@ -5,26 +5,43 @@ const ngoSchema = new mongoose.Schema(
         name: {
             type: String,
             required: true,
+            unique: true,
             trim: true
         },
-        contactEmail: {
+        email: {
             type: String,
             required: true,
+            unique: true,
             trim: true
         },
         phone: {
             type: String,
-            default: "",
+            required: true,
             trim: true
         },
-        city: {
+        address: {
             type: String,
             default: "",
             trim: true
         },
+        verificationStatus: {
+            type: String,
+            enum: ['pending', 'verified', 'rejected'],
+            default: 'verified'
+        },
+        logoUrl: {
+            type: String,
+            default: ""
+        },
         active: {
             type: Boolean,
             default: true
+        },
+        stats: {
+            totalCases: { type: Number, default: 0 },
+            activeCases: { type: Number, default: 0 },
+            recoveredAnimals: { type: Number, default: 0 },
+            closedCases: { type: Number, default: 0 }
         }
     },
     {

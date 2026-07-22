@@ -10,8 +10,13 @@ async function requireAdmin(req, res, next) {
         }
 
         const user = await User.findOne({ uid: req.authUid }).select("uid role email");
+        
+        console.log("[requireAdmin] req.authUid =", req.authUid);
+        console.log("[requireAdmin] user =", user);
+        console.log("[requireAdmin] user.role =", user?.role);
 
         if (!user || user.role !== "admin") {
+            console.log("[requireAdmin] Forbidden: User is not admin");
             return res.status(403).json({
                 success: false,
                 message: "Forbidden"

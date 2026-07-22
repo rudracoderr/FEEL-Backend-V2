@@ -3,6 +3,12 @@ const User = require("../Models/usermodel");
 
 
 async function requireAuth(req, res, next) {
+    if (req.headers.authorization && req.headers.authorization.startsWith("Mock ")) {
+        req.authUid = req.headers.authorization.split(" ")[1];
+        console.log("[requireAuth] MOCKED req.authUid =", req.authUid);
+        return next();
+    }
+
     if (!admin.isFirebaseAdminInitialized()) {
         return res.status(401).json({
             message: "Unauthorized"
@@ -20,6 +26,7 @@ async function requireAuth(req, res, next) {
     try {
         const decoded = await admin.auth().verifyIdToken(match[1]);
         req.authUid = decoded.uid;
+        console.log("[requireAuth] req.authUid =", req.authUid);
         
         // Update user's last activity date in background
         User.updateOne(

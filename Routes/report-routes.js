@@ -1385,4 +1385,102 @@ router.patch("/:id/accept-assistance", requireAuth, async (req, res) => {
     }
 });
 
+const NgoTransfer = require("../Models/ngo-transfer-model");
+
+// ============================================================================
+// NGO TRANSFER ROUTES (Volunteer Facing)
+// ============================================================================
+
+// POST /api/reports/:id/transfers
+// Create a transfer request to an NGO
+router.post("/:id/transfers", requireAuth, requireActiveUser, async (req, res) => {
+    try {
+        const reportId = req.params.id;
+        const { ngoId, remarks } = req.body;
+        const uid = req.authUid;
+
+        if (!ngoId) {
+            return res.status(400).json({ success: false, message: "ngoId is required." });
+        }
+
+        // 1. Ownership Validation: Must be the current paid volunteer handling this report
+        const report = await Report.findById(reportId);
+        if (!report) {
+            return res.status(404).json({ success: false, message: "Report not found." });
+        }
+
+        if (report.assistance.acceptedByUid !== uid) {
+            return res.status(403).json({ success: false, message: "Forbidden: You are not the assigned paid volunteer for this report." });
+        }
+
+        // 2. Create the transfer request
+        // The partial index will throw a duplicate key error (code 11000) if a pending/accepted transfer already exists
+        const transfer = await NgoTransfer.create({
+            reportId: report._id,
+            ngoId: ngoId,
+            requestedByUid: uid,
+            remarks: remarks || "",
+            status: "pending"
+        });
+
+        // 3. Notify the NGO
+        // We will notify the NGO Admin/Members if necessary, but for now we create an in-app DB notification.
+        // Wait, the recipientUid for an NGO might be multiple users. We will create a notification for the ngoId as a recipient placeholder, 
+        // or for each ngo_admin user. Let's find NGO users and notify them.
+        const ngoUsers = await User.find({ ngoId: ngoId });
+        for (const ngoUser of ngoUsers) {
+            await createNotification({
+                recipientUid: ngoUser.uid,
+                title: "New Transfer Request",
+                body: `A paid volunteer has requested a case transfer for ${report.title || "a report"}.`,
+                type: "TRANSFER_REQUESTED",
+                data: { reportId: String(report._id) }
+            });
+        }
+
+        return res.status(201).json({ success: true, transfer });
+    } catch (error) {
+        if (error.code === 11000) {
+            return res.status(409).json({ success: false, message: "An active transfer already exists for this report." });
+        }
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// DELETE /api/reports/:id/transfers/:transferId
+// Cancel a pending transfer
+router.delete("/:id/transfers/:transferId", requireAuth, requireActiveUser, async (req, res) => {
+    try {
+        const { id, transferId } = req.params;
+        const uid = req.authUid;
+
+        // Use findOneAndUpdate to ensure atomic transition only if it's pending
+        const transfer = await NgoTransfer.findOneAndUpdate(
+            { _id: transferId, reportId: id, requestedByUid: uid, status: 'pending' },
+            { $set: { status: 'cancelled', cancelledAt: new Date() } },
+            { new: true }
+        );
+
+        if (!transfer) {
+            return res.status(400).json({ success: false, message: "Transfer request is no longer pending or does not exist, or you lack permission." });
+        }
+
+        // Notify NGO users
+        const ngoUsers = await User.find({ ngoId: transfer.ngoId });
+        for (const ngoUser of ngoUsers) {
+            await createNotification({
+                recipientUid: ngoUser.uid,
+                title: "Transfer Cancelled",
+                body: `A paid volunteer cancelled their transfer request.`,
+                type: "TRANSFER_CANCELLED",
+                data: { reportId: String(transfer.reportId) }
+            });
+        }
+
+        return res.status(200).json({ success: true, transfer });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 module.exports = router;

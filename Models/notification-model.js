@@ -25,7 +25,13 @@ const notificationSchema = new mongoose.Schema({
             // assistance_accepted: sent to the assigned regular volunteer
             //   when a paid volunteer accepts the assistance request.
             "assistance_requested",
-            "assistance_accepted"
+            "assistance_accepted",
+            
+            // ── NGO Transfer System ─────────────────────────────────────
+            "TRANSFER_REQUESTED",
+            "TRANSFER_ACCEPTED",
+            "TRANSFER_REJECTED",
+            "TRANSFER_CANCELLED"
             // ─────────────────────────────────────────────────────────────────────
         ],
         required: true
