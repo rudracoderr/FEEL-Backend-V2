@@ -26,12 +26,27 @@ const notificationSchema = new mongoose.Schema({
             //   when a paid volunteer accepts the assistance request.
             "assistance_requested",
             "assistance_accepted",
-            
+
             // ── NGO Transfer System ─────────────────────────────────────
             "TRANSFER_REQUESTED",
             "TRANSFER_ACCEPTED",
             "TRANSFER_REJECTED",
-            "TRANSFER_CANCELLED"
+            "TRANSFER_CANCELLED",
+            "RESCUE_TRANSFERRED_TO_NGO",
+
+            // ── Volunteer & Rescue Progress ──────────────────────────────
+            // volunteer_accepted: sent to admins when a volunteer accepts a rescue.
+            // rescue_progress:    fallback/initial progress notification to reporter.
+            // rescue_on_the_way:  sent to reporter when volunteer status = "On The Way".
+            // rescue_reached_location: sent to reporter when volunteer arrives on site.
+            // rescue_completed:   sent to admins when a rescue is fully resolved.
+            // rescue_completed_reporter: sent to reporter when rescue is resolved.
+            "volunteer_accepted",
+            "rescue_progress",
+            "rescue_on_the_way",
+            "rescue_reached_location",
+            "rescue_completed",
+            "rescue_completed_reporter"
             // ─────────────────────────────────────────────────────────────────────
         ],
         required: true

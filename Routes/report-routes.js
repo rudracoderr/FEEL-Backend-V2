@@ -273,7 +273,7 @@ router.get("/", async (req, res) => {
         if (req.query.assistancePending === 'true') {
             query["assistance.status"] = "pending";
         }
-        
+
         if (req.query.assistanceAcceptedBy) {
             query["assistance.status"] = "accepted";
             query["assistance.acceptedByUid"] = req.query.assistanceAcceptedBy;
@@ -1392,60 +1392,197 @@ const NgoTransfer = require("../Models/ngo-transfer-model");
 // ============================================================================
 
 // POST /api/reports/:id/transfers
-// Create a transfer request to an NGO
+// Create an NGO transfer request — Paid Volunteer only.
+//
+// Design decisions:
+//   • requireActiveUser already resolved req.activeUser so we avoid a second
+//     User.findOne() for the volunteer's own data.
+//   • All snapshot data is captured at request-time so the historical record
+//     is immutable even if Report/User/Ngo documents change later.
+//   • transferStatus on the Report is set to "pending" here; ownership fields
+//     (currentHandlerType, currentNgoId) are NOT touched until NGO acceptance.
+//   • No transactions — the project uses no transactions anywhere. The partial
+//     unique index on { reportId, status ∈ [pending, accepted] } is the
+//     atomicity guard. A duplicate key (11000) is handled gracefully.
+//   • Notifications are fire-and-forget for NGO users only (reporter/volunteer
+//     notifications are a later phase).
 router.post("/:id/transfers", requireAuth, requireActiveUser, async (req, res) => {
     try {
         const reportId = req.params.id;
-        const { ngoId, remarks } = req.body;
         const uid = req.authUid;
+        const caller = req.activeUser; // resolved by requireActiveUser
+
+        // ── 1. Validate caller is an approved paid volunteer ─────────────────
+        if (!caller || !caller.isPaidVolunteer || caller.paidVolunteerStatus !== "approved") {
+            return res.status(403).json({
+                success: false,
+                message: "Only approved paid volunteers can create transfer requests."
+            });
+        }
+
+        // ── 2. Parse & validate body ─────────────────────────────────────────
+        const { ngoId, remarks, condition } = req.body;
 
         if (!ngoId) {
             return res.status(400).json({ success: false, message: "ngoId is required." });
         }
 
-        // 1. Ownership Validation: Must be the current paid volunteer handling this report
-        const report = await Report.findById(reportId);
+        // ── 3. Load the report ───────────────────────────────────────────────
+        const report = await Report.findById(reportId).lean();
         if (!report) {
             return res.status(404).json({ success: false, message: "Report not found." });
         }
 
-        if (report.assistance.acceptedByUid !== uid) {
-            return res.status(403).json({ success: false, message: "Forbidden: You are not the assigned paid volunteer for this report." });
-        }
-
-        // 2. Create the transfer request
-        // The partial index will throw a duplicate key error (code 11000) if a pending/accepted transfer already exists
-        const transfer = await NgoTransfer.create({
-            reportId: report._id,
-            ngoId: ngoId,
-            requestedByUid: uid,
-            remarks: remarks || "",
-            status: "pending"
-        });
-
-        // 3. Notify the NGO
-        // We will notify the NGO Admin/Members if necessary, but for now we create an in-app DB notification.
-        // Wait, the recipientUid for an NGO might be multiple users. We will create a notification for the ngoId as a recipient placeholder, 
-        // or for each ngo_admin user. Let's find NGO users and notify them.
-        const ngoUsers = await User.find({ ngoId: ngoId });
-        for (const ngoUser of ngoUsers) {
-            await createNotification({
-                recipientUid: ngoUser.uid,
-                title: "New Transfer Request",
-                body: `A paid volunteer has requested a case transfer for ${report.title || "a report"}.`,
-                type: "TRANSFER_REQUESTED",
-                data: { reportId: String(report._id) }
+        // Report must be actively accepted (not pending/resolved/fake)
+        if (report.status !== "accepted") {
+            return res.status(409).json({
+                success: false,
+                message: "Transfer requests can only be made for active (accepted) rescues."
             });
         }
 
+        // Caller must be the paid volunteer currently handling this report.
+        // Two valid paths:
+        //   1. They directly accepted the rescue → report.assignedVolunteer.uid
+        //   2. They accepted an assistance request → report.assistance.acceptedByUid
+        const isDirectlyAssigned = report.assignedVolunteer?.uid === uid;
+        const isAssisting        = report.assistance?.acceptedByUid === uid;
+
+        if (!isDirectlyAssigned && !isAssisting) {
+            return res.status(403).json({
+                success: false,
+                message: "Forbidden: You are not the paid volunteer currently handling this rescue."
+            });
+        }
+
+        // Block if a transfer is already in a terminal-complete state
+        if (report.transferStatus === "completed") {
+            return res.status(409).json({
+                success: false,
+                message: "This rescue has already been transferred to an NGO."
+            });
+        }
+
+        // ── 4. Load the NGO ──────────────────────────────────────────────────
+        const Ngo = require("../Models/ngo-model");
+        const ngo = await Ngo.findById(ngoId).lean();
+        if (!ngo) {
+            return res.status(404).json({ success: false, message: "NGO not found." });
+        }
+
+        // ── 5. Load reporter user (for phone snapshot) ───────────────────────
+        // reporterUid may be null for guest reports — handle gracefully.
+        let reporterUser = null;
+        if (report.reporterUid) {
+            reporterUser = await User.findOne({ uid: report.reporterUid })
+                .select("uid fullName phone")
+                .lean();
+        }
+
+        // ── 6. Build immutable snapshots ─────────────────────────────────────
+        const reporterSnapshot = {
+            uid: report.reporterUid || null,
+            name: report.reporterName || "",
+            phone: reporterUser?.phone || report.reporterContact || ""
+        };
+
+        const transferredBy = {
+            uid: caller.uid || null,
+            name: caller.fullName || "",
+            phone: caller.phone || ""
+        };
+
+        const ngoSnapshot = {
+            id: ngo._id,
+            name: ngo.name || "",
+            phone: ngo.phone || ""
+        };
+
+        const animalSnapshot = {
+            imageUrls: report.imageUrls || [],
+            animalType: report.title || "",   // title is closest proxy for animal type
+            description: report.description || "",
+            address: report.address || "",
+            location: report.location || { type: "Point", coordinates: [] }
+        };
+
+        // condition is optional — caller supplies it to give NGO context
+        const conditionPayload = {
+            severity: condition?.severity || null,
+            summary: condition?.summary || "",
+            needsShelter: Boolean(condition?.needsShelter),
+            needsTransport: Boolean(condition?.needsTransport),
+            needsSurgery: Boolean(condition?.needsSurgery)
+        };
+
+        // ── 7. Create NgoTransfer document ───────────────────────────────────
+        // The partial unique index throws code 11000 if a pending/accepted
+        // transfer already exists for this reportId — caught below.
+        const transfer = await NgoTransfer.create({
+            reportId: report._id,
+            ngoId: ngo._id,
+            requestedByUid: uid,
+            remarks: typeof remarks === "string" ? remarks.trim() : "",
+            status: "pending",
+
+            // snapshots
+            reporterSnapshot,
+            transferredBy,
+            ngoSnapshot,
+            animalSnapshot,
+            condition: conditionPayload
+        });
+
+        // ── 8. Mark report transferStatus = "pending" ────────────────────────
+        // Do NOT touch currentHandlerType or currentNgoId — those update on NGO acceptance.
+        await Report.findByIdAndUpdate(
+            report._id,
+            { $set: { transferStatus: "pending" } }
+        );
+
+        // ── 9. Notify NGO users (fire-and-forget) ────────────────────────────
+        // Notify reporter and volunteer in later phases per the spec.
+        User.find({
+            ngoId: ngo._id,
+            isSuspended: { $ne: true }
+        })
+            .select("uid deviceToken")
+            .lean()
+            .then(async (ngoUsers) => {
+                for (const ngoUser of ngoUsers) {
+                    try {
+                        await createNotification({
+                            recipientUid: ngoUser.uid,
+                            title: "New Transfer Request",
+                            body: `A paid volunteer has requested a case transfer: "${report.title || "Unknown rescue"}".`,
+                            type: "TRANSFER_REQUESTED",
+                            data: {
+                                transferId: String(transfer._id),
+                                reportId: String(report._id)
+                            },
+                            deviceToken: ngoUser.deviceToken || null,
+                            context: { uid: ngoUser.uid, fullName: "" }
+                        });
+                    } catch (notifErr) {
+                        console.error("[transfers] Failed to notify NGO user:", ngoUser.uid, notifErr.message);
+                    }
+                }
+            })
+            .catch(err => console.error("[transfers] NGO user lookup failed:", err.message));
+
         return res.status(201).json({ success: true, transfer });
+
     } catch (error) {
         if (error.code === 11000) {
-            return res.status(409).json({ success: false, message: "An active transfer already exists for this report." });
+            return res.status(409).json({
+                success: false,
+                message: "An active transfer request already exists for this rescue."
+            });
         }
         return res.status(500).json({ success: false, message: error.message });
     }
 });
+
 
 // DELETE /api/reports/:id/transfers/:transferId
 // Cancel a pending transfer

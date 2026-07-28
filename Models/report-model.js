@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 
 const reportSchema = new mongoose.Schema({
-// add deviecetoken
+    // add deviecetoken
     title: {
         type: String,
         required: true
@@ -152,7 +152,7 @@ const reportSchema = new mongoose.Schema({
         type: [String],
         required: true,
         validate: {
-            validator: function(imageUrls) {
+            validator: function (imageUrls) {
                 return Array.isArray(imageUrls) && imageUrls.length > 0;
             },
             message: "At least one report image is required"
@@ -225,6 +225,31 @@ const reportSchema = new mongoose.Schema({
             default: []
         }
 
+    },
+
+    // ───────────────────────────────────────────────────────────────────────
+
+    // ── NGO Transfer Ownership ──────────────────────────────────────────────
+    // Tracks which type of handler currently owns this rescue and whether a
+    // transfer is in progress.  currentNgoId is the single source of truth
+    // for which NGO holds the case — do NOT add a redundant currentNgoName.
+
+    currentHandlerType: {
+        type: String,
+        enum: ["none", "volunteer", "ngo"],
+        default: "none"
+    },
+
+    currentNgoId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Ngo",
+        default: null
+    },
+
+    transferStatus: {
+        type: String,
+        enum: ["none", "pending", "completed"],
+        default: "none"
     }
 
     // ───────────────────────────────────────────────────────────────────────
