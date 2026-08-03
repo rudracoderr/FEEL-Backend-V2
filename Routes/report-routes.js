@@ -558,8 +558,11 @@ router.patch("/:id/accept", requireAuth, async (req, res) => {
             });
         }
 
-        const updatedReport = await Report.findByIdAndUpdate(
-            req.params.id,
+        // Atomic update: the status:'pending' filter means only one volunteer can ever
+        // win this race. If the report was already accepted by a concurrent request,
+        // findOneAndUpdate returns null and we return 409 instead of overwriting.
+        const updatedReport = await Report.findOneAndUpdate(
+            { _id: req.params.id, status: "pending" },
             {
                 $set: {
                     status: "accepted",
@@ -576,6 +579,13 @@ router.patch("/:id/accept", requireAuth, async (req, res) => {
             },
             { new: true }
         );
+
+        if (!updatedReport) {
+            return res.status(409).json({
+                success: false,
+                message: "This rescue has already been claimed by another volunteer."
+            });
+        }
 
         console.log("Report accepted - phone snapshot:", {
             reportId: updatedReport?._id || null,
@@ -1446,7 +1456,7 @@ router.post("/:id/transfers", requireAuth, requireActiveUser, async (req, res) =
         //   1. They directly accepted the rescue → report.assignedVolunteer.uid
         //   2. They accepted an assistance request → report.assistance.acceptedByUid
         const isDirectlyAssigned = report.assignedVolunteer?.uid === uid;
-        const isAssisting        = report.assistance?.acceptedByUid === uid;
+        const isAssisting = report.assistance?.acceptedByUid === uid;
 
         if (!isDirectlyAssigned && !isAssisting) {
             return res.status(403).json({
@@ -1601,6 +1611,13 @@ router.delete("/:id/transfers/:transferId", requireAuth, requireActiveUser, asyn
         if (!transfer) {
             return res.status(400).json({ success: false, message: "Transfer request is no longer pending or does not exist, or you lack permission." });
         }
+
+        // Fix #3: Reset Report.transferStatus so the rescue is no longer stuck in
+        // 'pending' state after the volunteer cancels. Without this, the Report
+        // document would never return to 'none', breaking the UI workflow.
+        await Report.findByIdAndUpdate(transfer.reportId, {
+            $set: { transferStatus: "none" }
+        });
 
         // Notify NGO users
         const ngoUsers = await User.find({ ngoId: transfer.ngoId });

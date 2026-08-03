@@ -257,6 +257,8 @@ const reportSchema = new mongoose.Schema({
 });
 
 reportSchema.index({ location: "2dsphere" });
+reportSchema.index({ reporterUid: 1 });                         // GET /by-reporter/:uid
+reportSchema.index({ "assignedVolunteer.uid": 1, status: 1 }); // GET /claimed/:uid
 
 const Report = mongoose.model("Report", reportSchema);
 

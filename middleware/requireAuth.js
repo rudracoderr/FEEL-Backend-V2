@@ -3,7 +3,13 @@ const User = require("../Models/usermodel");
 
 
 async function requireAuth(req, res, next) {
-    if (req.headers.authorization && req.headers.authorization.startsWith("Mock ")) {
+    // ⚠️  Development-only bypass — NEVER allowed in production.
+    // Set NODE_ENV=production on your server to ensure this block is unreachable.
+    if (
+        process.env.NODE_ENV !== "production" &&
+        req.headers.authorization &&
+        req.headers.authorization.startsWith("Mock ")
+    ) {
         req.authUid = req.headers.authorization.split(" ")[1];
         console.log("[requireAuth] MOCKED req.authUid =", req.authUid);
         return next();
