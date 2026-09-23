@@ -32,6 +32,7 @@ const notificationSchema = new mongoose.Schema({
             "TRANSFER_ACCEPTED",
             "TRANSFER_REJECTED",
             "TRANSFER_CANCELLED",
+            "TRANSFER_CLOSED",
             "RESCUE_TRANSFERRED_TO_NGO",
 
             // ── Volunteer & Rescue Progress ──────────────────────────────

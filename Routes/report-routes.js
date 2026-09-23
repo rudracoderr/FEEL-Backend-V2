@@ -373,6 +373,20 @@ router.get("/by-reporter/:uid", requireAuth, async (req, res) => {
     }
 });
 
+// GET NGO LIST — authenticated, paid-volunteer accessible.
+// Returns minimal { _id, name } so the transfer picker can render options.
+// ponytail: one read-only route, no new model/middleware.
+// MUST be defined before /:id so router.param validateMongoId does not intercept "ngos".
+router.get("/ngos", requireAuth, async (req, res) => {
+    try {
+        const Ngo = require("../Models/ngo-model");
+        const ngos = await Ngo.find({}).select("_id name").sort({ name: 1 }).lean();
+        return res.status(200).json({ success: true, ngos });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 // GET REPORT BY ID
 // Public route — but optionally reads the Bearer token to decide projection.
 // Approved paid volunteers receive assignedVolunteer.phone; all other callers do not.
@@ -1637,4 +1651,4 @@ router.delete("/:id/transfers/:transferId", requireAuth, requireActiveUser, asyn
     }
 });
 
-module.exports = router;
+module.exports = router;

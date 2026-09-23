@@ -1,6 +1,9 @@
 const User = require("../Models/usermodel");
 
 async function requireNgo(req, res, next) {
+    if (req.method === "OPTIONS") {
+        return next();
+    }
     try {
         if (!req.authUid) {
             return res.status(401).json({

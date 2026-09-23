@@ -25,6 +25,8 @@ async function requireAdmin(req, res, next) {
 
         req.adminUser = user;
         next();
+        // move to next middleware automatically
+        
     } catch (error) {
         return res.status(500).json({
             success: false,

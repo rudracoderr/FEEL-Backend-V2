@@ -11,7 +11,7 @@ const adminRoutes = require("./Routes/admin-routes");
 const adoptionRoutes = require("./Routes/adoption-routes");
 const ngoRoutes = require("./Routes/ngo-routes");
 const admin = require("./firebase-admin");
-
+console.log("SERVER STARTED", new Date().toISOString());
 
 require("dotenv").config();
 const dns = require("dns");
@@ -43,7 +43,16 @@ const globalLimiter = rateLimit({
    }
 });
 
-app.use(cors());
+const corsOptions = {
+   origin: true,
+   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
+   credentials: true,
+   optionsSuccessStatus: 204
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 app.use(globalLimiter);
 
 app.use(express.json());

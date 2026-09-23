@@ -3,6 +3,10 @@ const User = require("../Models/usermodel");
 
 
 async function requireAuth(req, res, next) {
+    if (req.method === "OPTIONS") {
+        return next();
+    }
+
     // ⚠️  Development-only bypass — NEVER allowed in production.
     // Set NODE_ENV=production on your server to ensure this block is unreachable.
     if (

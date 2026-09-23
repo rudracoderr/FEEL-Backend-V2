@@ -240,6 +240,12 @@ router.get("/:uid", async (req, res) => {
             });
         }
 
+        res.set({
+            "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        });
+
         return res.status(200).json(user);
     } catch (error) {
         console.error("Get user by uid failed:", error);
