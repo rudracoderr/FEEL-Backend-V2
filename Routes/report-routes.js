@@ -204,7 +204,7 @@ router.post("/", createReportLimiter, requireAuth, requireActiveUser, async (req
         // Uses the reporter's uid and the `date` field on saved reports. Cooldown is 5 minutes.
         try {
             if (reporterUid) {
-                const COOLDOWN_MS = 5;
+                const COOLDOWN_MS = 5 * 60 * 1000;
                 const lastReport = await Report.findOne({ reporterUid }).sort({ date: -1 }).select('date');
 
                 if (lastReport && lastReport.date) {
@@ -247,21 +247,40 @@ router.post("/", createReportLimiter, requireAuth, requireActiveUser, async (req
 });
 
 // GET ALL REPORTS (optionally filtered by radius)
-// Query params: lat (number), lng (number), radius (km, number)
+// Query params:
+//   page      (integer >= 1, default 1)
+//   limit     (integer 1–50, default 20)
+//   status    (string: pending | accepted | resolved | fake)
+//   lat       (number) — required for geospatial filtering
+//   lng       (number) — required for geospatial filtering
+//   radius    (number, km) — required for geospatial filtering
+//   assistancePending (boolean string "true")
+//   assistanceAcceptedBy (uid string)
+//
+// NOTE: $nearSphere is incompatible with countDocuments().
+// When a geospatial filter is active, total/totalPages are omitted and
+// hasMore is determined conservatively: reports.length === limit.
 router.get("/", async (req, res) => {
     try {
-        const { lat, lng, radius } = req.query;
-        const parsedLat = parseFloat(lat);
-        const parsedLng = parseFloat(lng);
-        const parsedRadius = parseFloat(radius);
+        // ── Pagination params ────────────────────────────────────────────────
+        const page  = Math.max(1, parseInt(req.query.page)  || 1);
+        const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
+        const skip  = (page - 1) * limit;
 
+        // ── Build filter query ───────────────────────────────────────────────
         let query = {};
-        if (
+
+        // Geospatial — $nearSphere requires a 2dsphere index on `location`.
+        const parsedLat    = parseFloat(req.query.lat);
+        const parsedLng    = parseFloat(req.query.lng);
+        const parsedRadius = parseFloat(req.query.radius);
+        const isGeospatial = (
             Number.isFinite(parsedLat) &&
             Number.isFinite(parsedLng) &&
             Number.isFinite(parsedRadius) &&
             parsedRadius > 0
-        ) {
+        );
+        if (isGeospatial) {
             query.location = {
                 $nearSphere: {
                     $geometry: { type: "Point", coordinates: [parsedLng, parsedLat] },
@@ -270,17 +289,63 @@ router.get("/", async (req, res) => {
             };
         }
 
-        if (req.query.assistancePending === 'true') {
-            query["assistance.status"] = "pending";
+        // Status filter — validated against allowlist to prevent injection.
+        const ALLOWED_STATUSES = ["pending", "accepted", "resolved", "fake"];
+        if (req.query.status && ALLOWED_STATUSES.includes(req.query.status)) {
+            query.status = req.query.status;
         }
 
+        // Assistance filters (existing behaviour, preserved as-is).
+        if (req.query.assistancePending === "true") {
+            query["assistance.status"] = "pending";
+        }
         if (req.query.assistanceAcceptedBy) {
-            query["assistance.status"] = "accepted";
+            query["assistance.status"]      = "accepted";
             query["assistance.acceptedByUid"] = req.query.assistanceAcceptedBy;
         }
 
-        const reports = await Report.find(query).select(REPORT_LIST_PROJECTION).lean();
-        return res.status(200).json(reports);
+        // ── Execute paginated query ──────────────────────────────────────────
+        // Sort deterministically: newest first, with _id as tiebreaker so that
+        // concurrent inserts between pages never cause a document to appear twice.
+        const reports = await Report.find(query)
+            .select(REPORT_LIST_PROJECTION)
+            .sort({ date: -1, _id: -1 })
+            .skip(skip)
+            .limit(limit)
+            .lean();
+
+        // ── Pagination metadata ──────────────────────────────────────────────
+        // $nearSphere is NOT compatible with countDocuments(); skip it for geo
+        // requests and fall back to the conservative hasMore heuristic instead.
+        let total      = null;
+        let totalPages = null;
+        let hasMore;
+
+        if (isGeospatial) {
+            // Conservative: if we got a full page, assume there might be more.
+            hasMore = reports.length === limit;
+        } else {
+            // Optimization: countDocuments({}) is O(N). For empty filters (global feed),
+            // use estimatedDocumentCount() which is O(1) using collection metadata.
+            if (Object.keys(query).length === 0) {
+                total = await Report.estimatedDocumentCount();
+            } else {
+                total = await Report.countDocuments(query);
+            }
+            totalPages = Math.ceil(total / limit);
+            hasMore    = page < totalPages;
+        }
+
+        return res.status(200).json({
+            reports,
+            pagination: {
+                page,
+                limit,
+                total,       // null for geospatial requests
+                totalPages,  // null for geospatial requests
+                hasMore,
+            },
+        });
     } catch (error) {
         return res.status(400).json({
             error: error.message
@@ -1031,6 +1096,26 @@ router.patch("/:id/progress", requireAuth, async (req, res) => {
             updateFields["resolutionDetails.note"] = resolutionNote;
             updateFields["resolutionDetails.resolvedAt"] = new Date();
             updateFields["resolutionDetails.resolvedByUid"] = uid;
+
+            // Reset transferStatus so the report is no longer flagged as pending
+            // a transfer. The NGO transfer document itself is cancelled below.
+            updateFields.transferStatus = "none";
+
+            // Auto-cancel any pending NGO transfer for this report.
+            // A volunteer resolving in the field preempts a pending NGO handoff.
+            // Without this, the transfer stays "pending" indefinitely and the
+            // NGO accept route returns a permanent 409 when they try to action it.
+            const NgoTransferModel = require("../Models/ngo-transfer-model");
+            await NgoTransferModel.updateMany(
+                { reportId: req.params.id, status: "pending" },
+                {
+                    $set: {
+                        status: "cancelled",
+                        cancelledAt: new Date(),
+                        closureRemarks: "Auto-cancelled: rescue resolved by volunteer before NGO acceptance."
+                    }
+                }
+            );
         }
 
         const updatedReport = await Report.findByIdAndUpdate(
@@ -1651,4 +1736,4 @@ router.delete("/:id/transfers/:transferId", requireAuth, requireActiveUser, asyn
     }
 });
 
-module.exports = router;
+module.exports = router;

@@ -358,11 +358,6 @@ async function createNotification({
     }
 }
 
-module.exports = {
-    createNotification,
-    getPaidVolunteersInRange
-};
-
 async function getPaidVolunteersInRange(report) {
     if (!report || !report.location || !Array.isArray(report.location.coordinates)) {
         return [];

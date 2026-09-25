@@ -31,7 +31,7 @@ app.set("trust proxy", 1);
 // Acts as a broad abuse shield; stricter limiters are applied per sensitive route.
 // ---------------------------------------------------------------------------
 const globalLimiter = rateLimit({
-   windowMs: 15, // 15 minutes
+   windowMs: 15 * 60 * 1000, // 15 minutes
    max: 1000,
    standardHeaders: "draft-7", // Return rate-limit info in `RateLimit-*` headers (RFC draft 7)
    legacyHeaders: false,       // Disable the deprecated `X-RateLimit-*` headers
@@ -88,7 +88,10 @@ app.get("/", (req, res) => {
 
 async function startServer() {
    try {
-      await mongoose.connect(process.env.MONGO_URI);
+      await mongoose.connect(process.env.MONGO_URI, {
+         maxPoolSize: 500, // Prevents pool bottleneck under high concurrent load (300 VUs)
+         minPoolSize: 50
+      });
       console.log("MongoDB Connected");
 
       app.listen(5000, () => {

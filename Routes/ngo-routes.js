@@ -141,33 +141,50 @@ router.patch("/transfers/:id/accept", async (req, res) => {
         const report = await Report.findById(transfer.reportId).lean();
 
         if (!report) {
-            // Orphaned transfer — roll back and surface the inconsistency
+            // Orphaned transfer — the report was deleted. Cancel the transfer
+            // so it is removed from the NGO's pending queue.
             await NgoTransfer.findByIdAndUpdate(transfer._id, {
-                $set: { status: "pending", acceptedAt: null, acceptedBy: { uid: null, name: "", phone: "" } }
+                $set: {
+                    status: "cancelled",
+                    cancelledAt: new Date(),
+                    closureRemarks: "Auto-cancelled: associated rescue report no longer exists."
+                }
             });
             return res.status(409).json({
                 success: false,
-                message: "Associated report no longer exists. Transfer has been rolled back."
+                message: "Associated report no longer exists. Transfer has been cancelled."
             });
         }
 
         if (report.status !== "accepted") {
+            // Rescue is no longer active (resolved or cancelled by volunteer).
+            // Cancel the transfer so it clears out of the NGO's pending queue.
             await NgoTransfer.findByIdAndUpdate(transfer._id, {
-                $set: { status: "pending", acceptedAt: null, acceptedBy: { uid: null, name: "", phone: "" } }
+                $set: {
+                    status: "cancelled",
+                    cancelledAt: new Date(),
+                    closureRemarks: "Auto-cancelled: rescue is no longer active (resolved or cancelled)."
+                }
             });
             return res.status(409).json({
                 success: false,
-                message: "Rescue is no longer active. Transfer has been rolled back."
+                message: "Rescue is no longer active. Transfer has been cancelled."
             });
         }
 
         if (report.transferStatus !== "pending") {
+            // Report's transferStatus no longer matches — stale transfer state.
+            // Cancel so it does not persist in the NGO's pending queue.
             await NgoTransfer.findByIdAndUpdate(transfer._id, {
-                $set: { status: "pending", acceptedAt: null, acceptedBy: { uid: null, name: "", phone: "" } }
+                $set: {
+                    status: "cancelled",
+                    cancelledAt: new Date(),
+                    closureRemarks: "Auto-cancelled: report transfer status no longer pending."
+                }
             });
             return res.status(409).json({
                 success: false,
-                message: "Report transfer is not in pending state. Transfer has been rolled back."
+                message: "Report transfer is not in pending state. Transfer has been cancelled."
             });
         }
 

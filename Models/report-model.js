@@ -226,6 +226,7 @@ const reportSchema = new mongoose.Schema({
         }
 
     },
+    
 
     // ───────────────────────────────────────────────────────────────────────
 
@@ -259,6 +260,13 @@ const reportSchema = new mongoose.Schema({
 reportSchema.index({ location: "2dsphere" });
 reportSchema.index({ reporterUid: 1 });                         // GET /by-reporter/:uid
 reportSchema.index({ "assignedVolunteer.uid": 1, status: 1 }); // GET /claimed/:uid
+
+// ── Pagination & Feed Indexes ──────────────────────────────────────────
+// Support deterministic sort for the global feed (no filters)
+reportSchema.index({ date: -1, _id: -1 });
+
+// Support status-filtered tabs (e.g. pending/accepted) + deterministic sort
+reportSchema.index({ status: 1, date: -1, _id: -1 });
 
 const Report = mongoose.model("Report", reportSchema);
 
