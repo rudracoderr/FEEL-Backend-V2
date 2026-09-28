@@ -91,8 +91,8 @@ router.get("/transfers", async (req, res) => {
 //     'pending' before returning 500 — manual rollback pattern (no transactions).
 //   • transferStatus enum on Report is ['none','pending','completed'].
 //     'completed' is the correct terminal state after NGO acceptance.
-//   • assistance.status is only touched when it equals 'accepted' — otherwise
-//     left untouched to avoid disturbing unrelated lifecycle states.
+//   • assistance.status: 'accepted' → 'completed'; 'pending' → 'none' (stale
+//     request cleared atomically with report ownership transfer).
 //   • NGO stats increment is fire-and-forget to avoid blocking the response.
 router.patch("/transfers/:id/accept", async (req, res) => {
     const now = new Date();
@@ -199,6 +199,11 @@ router.patch("/transfers/:id/accept", async (req, res) => {
         if (report.assistance?.status === "accepted") {
             reportUpdate["assistance.status"]      = "completed";
             reportUpdate["assistance.completedAt"] = now;
+        } else if (report.assistance?.status === "pending") {
+            // ponytail: reset stale pending request to "none" — "cancelled" is not
+            // in the schema enum; "none" is the correct no-PV-assigned terminal state.
+            // No completedAt because no PV was ever accepted.
+            reportUpdate["assistance.status"] = "none";
         }
 
         // ── 5. Update Report (with manual rollback on failure) ───────────────

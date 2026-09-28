@@ -1435,6 +1435,13 @@ router.patch("/:id/accept-assistance", requireAuth, async (req, res) => {
             return res.status(403).json({ success: false, message: "You cannot accept your own assistance request." });
         }
 
+        // Defense-in-depth: block if NGO already owns this case.
+        // Stale clients may still show a pending assistance request even after
+        // the NGO accepted the transfer and reset assistance.status to "none".
+        if (report.currentHandlerType === "ngo") {
+            return res.status(409).json({ success: false, message: "This rescue has been transferred to an NGO and no longer accepts assistance." });
+        }
+
         const distanceKm = calculateDistanceKm(
             user.location?.coordinates,
             report.location?.coordinates
