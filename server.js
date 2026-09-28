@@ -10,6 +10,7 @@ const userRoutes = require("./Routes/users-routes");
 const adminRoutes = require("./Routes/admin-routes");
 const adoptionRoutes = require("./Routes/adoption-routes");
 const ngoRoutes = require("./Routes/ngo-routes");
+const notificationRoutes = require("./Routes/notification-routes");
 const admin = require("./firebase-admin");
 console.log("SERVER STARTED", new Date().toISOString());
 
@@ -62,6 +63,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/adoptions", adoptionRoutes);
 app.use("/api/ngo", ngoRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 app.get("/test-firebase-admin", (req, res) => {
    if (!admin.isFirebaseAdminInitialized()) {
@@ -94,8 +96,9 @@ async function startServer() {
       });
       console.log("MongoDB Connected");
 
-      app.listen(5000, () => {
-         console.log("Server running on port 5000");
+      const port = process.env.PORT || 5000;
+      app.listen(port, () => {
+         console.log(`Server running on port ${port}`);
       });
    } catch (error) {
       console.error(error.stack);

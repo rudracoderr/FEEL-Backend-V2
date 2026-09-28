@@ -65,7 +65,8 @@ const REPORT_LIST_PROJECTION = {
     location: 1, address: 1, landmark: 1, date: 1,
     reporterName: 1, reporterUid: 1, imageUrls: 1,
     "assistance.status": 1, "assistance.requestedAt": 1,
-    "assistance.acceptedByUid": 1, "assistance.acceptedByName": 1, "assistance.acceptedByPhone": 1
+    "assistance.acceptedByUid": 1, "assistance.acceptedByName": 1, "assistance.acceptedByPhone": 1,
+    transferStatus: 1, currentHandlerType: 1, currentNgoId: 1
 };
 
 // Public detail projection — used by GET /:id for unauthenticated callers.
@@ -79,7 +80,8 @@ const REPORT_DETAIL_PROJECTION = {
     reporterName: 1, reporterUid: 1, imageUrls: 1,
     resolutionRemark: 1, resolutionDetails: 1,
     "assistance.status": 1, "assistance.requestedAt": 1,
-    "assistance.acceptedByUid": 1, "assistance.acceptedByName": 1, "assistance.acceptedByPhone": 1
+    "assistance.acceptedByUid": 1, "assistance.acceptedByName": 1, "assistance.acceptedByPhone": 1,
+    transferStatus: 1, currentHandlerType: 1, currentNgoId: 1
 };
 
 // Extended detail projection for approved paid volunteers.
@@ -1707,9 +1709,14 @@ router.delete("/:id/transfers/:transferId", requireAuth, requireActiveUser, asyn
         const { id, transferId } = req.params;
         const uid = req.authUid;
 
+        let query = { reportId: id, requestedByUid: uid, status: 'pending' };
+        if (transferId && transferId !== 'pending') {
+            query._id = transferId;
+        }
+
         // Use findOneAndUpdate to ensure atomic transition only if it's pending
         const transfer = await NgoTransfer.findOneAndUpdate(
-            { _id: transferId, reportId: id, requestedByUid: uid, status: 'pending' },
+            query,
             { $set: { status: 'cancelled', cancelledAt: new Date() } },
             { new: true }
         );
