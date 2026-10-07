@@ -457,6 +457,7 @@ router.patch("/transfers/:id/close", validate(str("closureRemarks", 1000)), asyn
             resolvedAt:         now,
             resolutionRemark:   closureRemarks.trim(),
             resolvedBy:         req.ngoUser.email || req.ngoUser.uid,
+            resolverRole:       "ngo",
             currentHandlerType: "none",
             currentNgoId:       null,
             transferStatus:     "none"

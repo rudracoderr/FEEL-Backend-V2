@@ -100,6 +100,18 @@ const reportSchema = new mongoose.Schema({
         default: ""
     },
 
+    // Identifies the class of actor that resolved the report.
+    // Written at resolution time by each resolver path:
+    //   "admin"     → admin dashboard resolved
+    //   "volunteer" → normal or paid volunteer resolved
+    //   "ngo"       → NGO portal closed the transfer
+    //   ""          → historical record created before this field existed
+    resolverRole: {
+        type: String,
+        enum: ["admin", "volunteer", "ngo", ""],
+        default: ""
+    },
+
     location: {
         type: {
             type: String,

@@ -81,6 +81,7 @@ function getAdminReportStatusUpdate(status, options = {}) {
                 status: "resolved",
                 resolutionRemark: options.resolutionRemark,
                 resolvedBy: options.resolvedBy,
+                resolverRole: "admin",
                 resolvedAt: new Date()
             }
         };

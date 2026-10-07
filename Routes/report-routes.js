@@ -96,7 +96,7 @@ const REPORT_DETAIL_PROJECTION = {
     acceptedAt: 1, resolvedAt: 1, volunteerProgress: 1, progressUpdatedAt: 1,
     location: 1, address: 1, landmark: 1, date: 1,
     reporterName: 1, reporterUid: 1, imageUrls: 1,
-    resolutionRemark: 1,
+    resolutionRemark: 1, resolverRole: 1,
     "resolutionDetails.photoUrl": 1, "resolutionDetails.note": 1, "resolutionDetails.resolvedAt": 1,
     "assistance.status": 1, "assistance.requestedAt": 1,
     "assistance.acceptedByUid": 1, "assistance.acceptedByName": 1,
@@ -869,6 +869,7 @@ router.patch("/:id/resolve", requireAuth, validate(resolutionRules), async (req,
             progressUpdatedAt: new Date(),
             resolutionRemark: resolutionNote,
             resolvedBy: uid,
+            resolverRole: "volunteer",
             resolutionDetails: {
                 photoUrl: resolutionPhotoUrl,
                 note: resolutionNote,
@@ -1140,6 +1141,7 @@ router.patch("/:id/progress", requireAuth, validate(body("progress").isString(),
             updateFields.resolvedAt = new Date();
             updateFields.resolutionRemark = resolutionNote;
             updateFields.resolvedBy = uid;
+            updateFields.resolverRole = "volunteer";
             updateFields["resolutionDetails.photoUrl"] = resolutionPhotoUrl;
             updateFields["resolutionDetails.note"] = resolutionNote;
             updateFields["resolutionDetails.resolvedAt"] = new Date();
