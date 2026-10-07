@@ -5,6 +5,7 @@ const Report = require("./Models/report-model");
 const User = require("./Models/usermodel");
 const cors = require("cors");
 const { rateLimit } = require("express-rate-limit");
+const mongoSanitize = require("express-mongo-sanitize");
 const reportRoutes = require("./Routes/report-routes");
 const userRoutes = require("./Routes/users-routes");
 const adminRoutes = require("./Routes/admin-routes");
@@ -58,6 +59,9 @@ app.use(globalLimiter);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// Remove client-supplied Mongo operator keys ($ne, $gt, $where, dotted paths...) from
+// req.body / req.query / req.params. Only incoming request data is touched.
+app.use(mongoSanitize());
 app.use("/api/reports", reportRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/admin", adminRoutes);

@@ -11,11 +11,13 @@ const userSchema = new mongoose.Schema({
     email: {
         type: String,
         required: true,
-        unique: true
+        unique: true,
+        trim: true
     },
 
     fullName: {
         type: String,
+        trim: true,
         default: ""
     },
 
@@ -26,11 +28,13 @@ const userSchema = new mongoose.Schema({
 
     phone: {
         type: String,
+        trim: true,
         default: ""
     },
 
     city: {
         type: String,
+        trim: true,
         default: ""
     },
 

@@ -3,6 +3,10 @@ const router = express.Router();
 const Ngo = require("../Models/ngo-model");
 const requireAuth = require("../middleware/requireAuth");
 const requireNgo = require("../middleware/requireNgo");
+const validateMongoId = require("../middleware/validateObjectId");
+const { validate, str, query } = require("../middleware/validate");
+
+router.param("id", validateMongoId("id"));
 
 router.use(requireAuth);
 router.use(requireNgo); // Protects all routes to NGO roles only
@@ -56,7 +60,9 @@ const Report = require("../Models/report-model");
 const User   = require("../Models/usermodel");
 
 // GET /api/ngo/transfers
-router.get("/transfers", async (req, res) => {
+router.get("/transfers", validate(
+    query("status").optional().isIn(["pending", "accepted", "rejected", "cancelled", "closed"])
+), async (req, res) => {
     try {
         const { status } = req.query;
         const query = { ngoId: req.ngoUser.ngoId };
@@ -282,7 +288,7 @@ router.patch("/transfers/:id/accept", async (req, res) => {
 //   • No rollback needed: the Report update is a soft reset ('none') with
 //     no ownership implications, so a partial failure is self-correcting
 //     (the volunteer will notice their transfer shows rejected and can retry).
-router.patch("/transfers/:id/reject", async (req, res) => {
+router.patch("/transfers/:id/reject", validate(str("remarks", 1000)), async (req, res) => {
     const now = new Date();
 
     try {
@@ -386,7 +392,7 @@ router.patch("/transfers/:id/reject", async (req, res) => {
 //     acceptedBy/rejectedBy but not closedBy).  The actor's identity is already
 //     captured in closureRemarks and is available via req.ngoUser.uid on the
 //     document.  No new schema fields are added per the implementation spec.
-router.patch("/transfers/:id/close", async (req, res) => {
+router.patch("/transfers/:id/close", validate(str("closureRemarks", 1000)), async (req, res) => {
     const now = new Date();
 
     try {

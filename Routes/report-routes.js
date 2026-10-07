@@ -4,6 +4,20 @@ const { rateLimit } = require("express-rate-limit");
 const router = express.Router();
 const validateMongoId = require("../middleware/validateObjectId");
 router.param("id", validateMongoId("id"));
+router.param("transferId", validateMongoId("transferId"));
+const { validate, str, point, pagination, lat, lng, body, query, param } = require("../middleware/validate");
+
+const reportText = [
+    str("title", 200), str("description", 5000), str("address", 500), str("landmark", 500),
+    body("imageUrls").optional().isArray({ min: 1, max: 10 }).withMessage("imageUrls must be an array of 1-10 urls"),
+    body("imageUrls.*").isString().isLength({ max: 2048 })
+];
+const uidParam = param("uid").isString().isLength({ min: 1, max: 128 });
+const resolutionRules = [
+    body("resolutionDetails").optional().isObject(),
+    body("resolutionDetails.photoUrl").optional().isString().isLength({ max: 2048 }),
+    body("resolutionDetails.note").optional().isString().isLength({ max: 2000 })
+];
 
 const Report = require("../Models/report-model");
 const User = require("../Models/usermodel");
@@ -28,7 +42,7 @@ const requireActiveUser = require("../middleware/requireActiveUser");
 // This is a second line of defence alongside the per-user DB cooldown — it
 // catches unauthenticated bursts before they ever hit the database.
 const createReportLimiter = rateLimit({
-    windowMs: 1000, // 1 hour
+    windowMs: 60 * 60 * 1000, // 1 hour
     max: 5,
     standardHeaders: "draft-7",
     legacyHeaders: false,
@@ -56,6 +70,7 @@ const abuseReportLimiter = rateLimit({
 });
 
 const ACCEPT_RADIUS_KM = 10;
+const NGO_OWNED_MESSAGE = "This rescue has been transferred to an NGO and can no longer be modified by the volunteer.";
 
 // Shared fields included in all report list responses.
 const REPORT_LIST_PROJECTION = {
@@ -160,7 +175,13 @@ function calculateDistanceKm(fromCoordinates, toCoordinates) {
 
 // CREATE REPORT — protected: requires authenticated user
 // createReportLimiter runs first (network edge), then auth, then active-user check.
-router.post("/", createReportLimiter, requireAuth, requireActiveUser, async (req, res) => {
+router.post("/", createReportLimiter, requireAuth, requireActiveUser, validate(
+    reportText,
+    body("severity").optional().isIn(["Low", "Medium", "High", "Critical"]),
+    str("reporterName", 100),
+    str("reporterContact", 100),
+    point("location")
+), async (req, res) => {
     try {
         const {
             title,
@@ -262,7 +283,15 @@ router.post("/", createReportLimiter, requireAuth, requireActiveUser, async (req
 // NOTE: $nearSphere is incompatible with countDocuments().
 // When a geospatial filter is active, total/totalPages are omitted and
 // hasMore is determined conservatively: reports.length === limit.
-router.get("/", async (req, res) => {
+router.get("/", validate(
+    pagination,
+    lat(query("lat").optional()),
+    lng(query("lng").optional()),
+    query("radius").optional().isFloat({ gt: 0, max: 1000 }).withMessage("radius must be between 0 and 1000 km"),
+    query("status").optional().isIn(["pending", "accepted", "resolved", "fake"]),
+    query("assistancePending").optional().isString(),
+    query("assistanceAcceptedBy").optional().isString().isLength({ max: 128 })
+), async (req, res) => {
     try {
         // ── Pagination params ────────────────────────────────────────────────
         const page  = Math.max(1, parseInt(req.query.page)  || 1);
@@ -356,7 +385,7 @@ router.get("/", async (req, res) => {
 });
 
 // GET CLAIMED REPORTS FOR A VOLUNTEER — protected
-router.get("/claimed/:uid", requireAuth, async (req, res) => {
+router.get("/claimed/:uid", requireAuth, validate(uidParam), async (req, res) => {
     try {
         const { uid } = req.params;
 
@@ -405,7 +434,7 @@ router.get("/claimed/:uid", requireAuth, async (req, res) => {
 });
 
 // GET REPORTS SUBMITTED BY A SPECIFIC USER (reporter) — protected
-router.get("/by-reporter/:uid", requireAuth, async (req, res) => {
+router.get("/by-reporter/:uid", requireAuth, validate(uidParam), async (req, res) => {
     try {
         const { uid } = req.params;
 
@@ -765,7 +794,7 @@ router.patch("/:id/accept", requireAuth, async (req, res) => {
 });
 
 // MARK REPORT AS RESOLVED — protected
-router.patch("/:id/resolve", requireAuth, async (req, res) => {
+router.patch("/:id/resolve", requireAuth, validate(resolutionRules), async (req, res) => {
     try {
         const uid = req.authUid;
 
@@ -797,6 +826,10 @@ router.patch("/:id/resolve", requireAuth, async (req, res) => {
                 success: false,
                 message: "Only the assigned volunteer can resolve this rescue."
             });
+        }
+
+        if (report.currentHandlerType === "ngo") {
+            return res.status(409).json({ success: false, message: NGO_OWNED_MESSAGE });
         }
 
         if (report.status !== "accepted") {
@@ -974,6 +1007,10 @@ router.patch("/:id/cancel", requireAuth, async (req, res) => {
             });
         }
 
+        if (report.currentHandlerType === "ngo") {
+            return res.status(409).json({ success: false, message: NGO_OWNED_MESSAGE });
+        }
+
         if (report.status !== "accepted") {
             return res.status(409).json({
                 success: false,
@@ -1017,7 +1054,7 @@ router.patch("/:id/cancel", requireAuth, async (req, res) => {
 });
 
 // UPDATE RESCUE PROGRESS BY VOLUNTEER — protected
-router.patch("/:id/progress", requireAuth, async (req, res) => {
+router.patch("/:id/progress", requireAuth, validate(body("progress").isString(), resolutionRules), async (req, res) => {
     try {
         const uid = req.authUid;
         const { progress } = req.body;
@@ -1044,6 +1081,10 @@ router.patch("/:id/progress", requireAuth, async (req, res) => {
                 success: false,
                 message: "Only the assigned volunteer can update progress."
             });
+        }
+
+        if (report.currentHandlerType === "ngo") {
+            return res.status(409).json({ success: false, message: NGO_OWNED_MESSAGE });
         }
 
         if (report.status !== "accepted") {
@@ -1218,7 +1259,7 @@ router.patch("/:id/progress", requireAuth, async (req, res) => {
 });
 
 // UPDATE REPORT — protected
-router.put("/:id", requireAuth, requireActiveUser, async (req, res) => {
+router.put("/:id", requireAuth, requireActiveUser, validate(reportText), async (req, res) => {
     try {
         const existingReport = await Report.findById(req.params.id);
 
@@ -1286,7 +1327,7 @@ router.delete("/:id", requireAuth, requireActiveUser, async (req, res) => {
 });
 
 // REPORT ABUSE / MODERATE REPORT — protected
-router.post("/:id/abuse", abuseReportLimiter, requireAuth, requireActiveUser, async (req, res) => {
+router.post("/:id/abuse", abuseReportLimiter, requireAuth, requireActiveUser, validate(body("reason").optional().isString()), async (req, res) => {
     try {
         const { id } = req.params;
         const { reason } = req.body;
@@ -1524,7 +1565,11 @@ const NgoTransfer = require("../Models/ngo-transfer-model");
 //     atomicity guard. A duplicate key (11000) is handled gracefully.
 //   • Notifications are fire-and-forget for NGO users only (reporter/volunteer
 //     notifications are a later phase).
-router.post("/:id/transfers", requireAuth, requireActiveUser, async (req, res) => {
+router.post("/:id/transfers", requireAuth, requireActiveUser, validate(
+    body("ngoId").optional().isMongoId().withMessage("ngoId must be a valid id"),
+    str("remarks", 1000),
+    str("condition", 500)
+), async (req, res) => {
     try {
         const reportId = req.params.id;
         const uid = req.authUid;

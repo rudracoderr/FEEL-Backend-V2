@@ -27,10 +27,12 @@ const ngoTransferSchema = new mongoose.Schema({
     },
     remarks: { 
         type: String, 
+        trim: true,
         default: '' 
     },
     closureRemarks: { 
         type: String, 
+        trim: true,
         default: '' 
     },
 

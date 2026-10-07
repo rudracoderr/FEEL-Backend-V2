@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const validateMongoId = require("../middleware/validateObjectId");
 router.param("id", validateMongoId("id"));
+const { validate, str, body } = require("../middleware/validate");
 
 const AdoptionListing = require("../Models/adoption-listing-model");
 const AdoptionApplication = require("../Models/adoption-application-model");
@@ -13,7 +14,17 @@ router.param("applicationId", validateMongoId("applicationId"));
 
 // POST /api/adoptions
 // Create a new adoption listing. Status defaults to pending.
-router.post("/", requireAuth, async (req, res) => {
+router.post("/", requireAuth, validate(
+    str("animalName", 100), str("species", 50), str("breed", 100), str("age", 50), str("gender", 30),
+    str("description", 3000),
+    body("photos").optional().isArray({ max: 10 }),
+    body("photos.*").isString().isLength({ max: 2048 }),
+    body("location").optional().isObject(),
+    str("location.state", 100), str("location.city", 100), str("location.area", 100),
+    body("health").optional().isObject(),
+    body("health.vaccinated").optional().isBoolean(),
+    body("health.sterilized").optional().isBoolean()
+), async (req, res) => {
     try {
         const {
             animalName,
@@ -98,7 +109,10 @@ router.get("/my-applications", requireAuth, async (req, res) => {
 
 // POST /api/adoptions/:id/apply
 // Submit an application for an adoption listing
-router.post("/:id/apply", requireAuth, async (req, res) => {
+router.post("/:id/apply", requireAuth, validate(
+    str("reason", 2000), str("experience", 2000), str("livingSituation", 2000),
+    body("phone").optional().isString().bail().matches(/^[0-9+()\-.\s]{0,20}$/).withMessage("phone format is invalid")
+), async (req, res) => {
     try {
         const listing = await AdoptionListing.findById(req.params.id);
         if (!listing) return res.status(404).json({ success: false, message: "Listing not found" });

@@ -4,11 +4,27 @@ const express = require("express");
 const router = express.Router();
 const User = require("../Models/usermodel");
 const requireAuth = require("../middleware/requireAuth");
+const { validate, str, point, body, param } = require("../middleware/validate");
 
 router.use(requireAuth);
 
+const phoneRule = body("phone").optional({ nullable: true }).isString().bail()
+    .matches(/^[0-9+()\-.\s]{0,20}$/).withMessage("phone format is invalid");
+const uidParam = param("uid").isString().isLength({ min: 1, max: 128 });
+const deviceTokenRule = body("deviceToken").optional({ nullable: true }).isString().isLength({ max: 4096 });
+
 // CREATE USER
-router.post("/", async (req, res) => {
+router.post("/", validate(
+    str("uid", 128),
+    body("email").optional().isString().bail().isLength({ max: 254 }).isEmail().withMessage("email is invalid"),
+    str("fullName", 100),
+    body("age").optional({ nullable: true }).isInt({ min: 0, max: 120 }),
+    phoneRule,
+    str("city", 100),
+    body("isVolunteer").optional().isBoolean(),
+    point("location"),
+    deviceTokenRule
+), async (req, res) => {
     try {
         const { uid, email, fullName, age, phone, city, isVolunteer, location, deviceToken } = req.body;
 
@@ -96,7 +112,7 @@ router.post("/", async (req, res) => {
 });
 
 // UPDATE DEVICE TOKEN
-router.patch("/:uid/device-token", async (req, res) => {
+router.patch("/:uid/device-token", validate(uidParam, deviceTokenRule), async (req, res) => {
     try {
         const { uid } = req.params;
         const { deviceToken } = req.body;
@@ -155,7 +171,7 @@ router.patch("/:uid/device-token", async (req, res) => {
     }
 });
 // UPDATE AVAILABILITY
-router.patch("/:uid/availability", async (req, res) => {
+router.patch("/:uid/availability", validate(uidParam, point("location")), async (req, res) => {
     try {
         const { uid } = req.params;
         const { isAvailable, location } = req.body;
@@ -216,7 +232,7 @@ router.patch("/:uid/availability", async (req, res) => {
 });
 
 // GET USER BY FIREBASE UID
-router.get("/:uid", async (req, res) => {
+router.get("/:uid", validate(uidParam), async (req, res) => {
     try {
         const { uid } = req.params;
 

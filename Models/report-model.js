@@ -4,12 +4,14 @@ const reportSchema = new mongoose.Schema({
     // add deviecetoken
     title: {
         type: String,
-        required: true
+        required: true,
+        trim: true
     },
 
     description: {
         type: String,
-        required: true
+        required: true,
+        trim: true
     },
 
     severity: {
@@ -114,11 +116,13 @@ const reportSchema = new mongoose.Schema({
 
     address: {
         type: String,
+        trim: true,
         default: ""
     },
 
     landmark: {
         type: String,
+        trim: true,
         default: ""
     },
 
@@ -130,7 +134,8 @@ const reportSchema = new mongoose.Schema({
 
     reporterName: {
         type: String,
-        required: true
+        required: true,
+        trim: true
     },
 
     reporterUid: {
@@ -140,7 +145,8 @@ const reportSchema = new mongoose.Schema({
 
     reporterContact: {
         type: String,
-        required: true
+        required: true,
+        trim: true
     },
 
     reporterDeviceToken: {

@@ -7,13 +7,15 @@ const requireAuth = require("../middleware/requireAuth");
 // req.authUid is set by requireAuth and is the authoritative identity —
 // the client never supplies its own UID.
 router.use(requireAuth);
+router.param("id", require("../middleware/validateObjectId")("id"));
+const { validate, pagination } = require("../middleware/validate");
 
 // ---------------------------------------------------------------------------
 // GET /api/notifications
 // Returns the authenticated user's notifications, newest first.
 // Pagination: ?page=1&limit=20 (max 50 per request).
 // ---------------------------------------------------------------------------
-router.get("/", async (req, res) => {
+router.get("/", validate(pagination), async (req, res) => {
     try {
         const uid = req.authUid;
         const page  = Math.max(1, parseInt(req.query.page, 10)  || 1);
