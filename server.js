@@ -1,6 +1,7 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const helmet = require("helmet");
+const https = require("https");
 const Report = require("./Models/report-model");
 const User = require("./Models/usermodel");
 const cors = require("cors");
@@ -82,6 +83,10 @@ app.get("/test-firebase-admin", (req, res) => {
 });
 
 
+app.get("/health", (req, res) => {
+   res.status(200).json({ status: "ok" });
+});
+
 app.get("/", (req, res) => {
 
    res.json({
@@ -103,6 +108,45 @@ async function startServer() {
       const port = process.env.PORT || 5000;
       app.listen(port, () => {
          console.log(`Server running on port ${port}`);
+
+         // ---------------------------------------------------------------------------
+         // AUTOMATIC SELF-PING MECHANISM
+         // Note: This cannot wake a completely sleeping Render instance if the Node.js
+         // process itself is suspended. It only helps prevent the instance from
+         // going idle by generating periodic activity while it is awake.
+         // ---------------------------------------------------------------------------
+         if (process.env.NODE_ENV !== "test" && process.env.SELF_PING_ENABLED === "true") {
+            const intervalMs = parseInt(process.env.SELF_PING_INTERVAL_MS, 10) || 300000;
+            let isPingRunning = false;
+
+            console.log(`Self-ping mechanism enabled. Interval: ${intervalMs}ms`);
+
+            setInterval(() => {
+               if (isPingRunning) {
+                  console.log("Self-ping skipped: previous ping is still running.");
+                  return;
+               }
+
+               isPingRunning = true;
+               const pingUrl = "https://feel-backend-v2.onrender.com/health";
+
+               https.get(pingUrl, (res) => {
+                  let data = "";
+                  res.on("data", (chunk) => { data += chunk; });
+                  res.on("end", () => {
+                     if (res.statusCode === 200) {
+                        console.log(`Self-ping successful: ${res.statusCode} ${data}`);
+                     } else {
+                        console.warn(`Self-ping failed with status code: ${res.statusCode}`);
+                     }
+                     isPingRunning = false;
+                  });
+               }).on("error", (err) => {
+                  console.error(`Self-ping network error: ${err.message}`);
+                  isPingRunning = false;
+               });
+            }, intervalMs);
+         }
       });
    } catch (error) {
       console.error(error.stack);
