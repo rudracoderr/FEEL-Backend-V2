@@ -8,7 +8,9 @@ router.param("transferId", validateMongoId("transferId"));
 const { validate, str, point, pagination, lat, lng, body, query, param } = require("../middleware/validate");
 
 const reportText = [
-    str("title", 200), str("description", 5000), str("address", 500), str("landmark", 500),
+    body("title").optional({ nullable: true }).isString().bail().trim().notEmpty().withMessage("title cannot be empty").bail().isLength({ max: 200 }),
+    body("description").optional({ nullable: true }).isString().bail().trim().notEmpty().withMessage("description cannot be empty").bail().isLength({ max: 5000 }),
+    str("address", 500), str("landmark", 500),
     body("imageUrls").optional().isArray({ min: 1, max: 10 }).withMessage("imageUrls must be an array of 1-10 urls"),
     body("imageUrls.*").isString().isLength({ max: 2048 })
 ];

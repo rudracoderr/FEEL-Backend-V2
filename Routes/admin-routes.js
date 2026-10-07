@@ -4,6 +4,37 @@ const mongoose = require("mongoose");
 const router = express.Router();
 const validateMongoId = require("../middleware/validateObjectId");
 router.param("id", validateMongoId("id"));
+const { validate, str, requiredStr, uidParam, body } = require("../middleware/validate");
+
+// Admin request validation (reuses middleware/validate.js; handlers keep their own checks as a second line).
+const REASON_MAX = 500;
+const reasonRule = requiredStr("reason", REASON_MAX);
+const phoneRule = body("phone").isString().withMessage("phone is required and must be a string").bail()
+    .trim().notEmpty().withMessage("phone cannot be empty").bail()
+    .matches(/^[0-9+()\-.\s]{1,20}$/).withMessage("phone format is invalid");
+const ngoCreateRules = [
+    requiredStr("name", 100),
+    requiredStr("email", 254).bail().isEmail().withMessage("email is invalid"),
+    phoneRule,
+    str("address", 300),
+    // Falsy/absent password keeps the existing default; a provided one must be a string Firebase accepts (6..128).
+    body("password").optional({ values: "falsy" }).isString().withMessage("password must be a string").bail()
+        .isLength({ min: 6, max: 128 }).withMessage("password must be between 6 and 128 characters"),
+    body("active").optional({ nullable: true }).isBoolean({ strict: true }).withMessage("active must be a boolean")
+];
+const ngoPatchRules = [
+    str("name", 100),
+
+    body("contactEmail").optional({ values: "falsy" }).isString().bail().trim().isLength({ max: 254 }).withMessage("contactEmail must be at most 254 characters").bail().isEmail().withMessage("contactEmail is invalid"),
+    body("phone").optional({ nullable: true }).isString().withMessage("phone must be a string").bail()
+        .trim().matches(/^[0-9+()\-.\s]{0,20}$/).withMessage("phone format is invalid"),
+    str("city", 100),
+    body("active").optional({ nullable: true }).isBoolean({ strict: true }).withMessage("active must be a boolean")
+];
+const resolveRules = [
+    requiredStr("resolutionRemark", 2000),
+    str("resolvedBy", 100)
+];
 
 const User = require("../Models/usermodel");
 const Report = require("../Models/report-model");
@@ -135,7 +166,7 @@ router.get("/users", async (req, res) => {
 });
 
 // GET /api/admin/users/:uid/reports
-router.get("/users/:uid/reports", async (req, res) => {
+router.get("/users/:uid/reports", validate(uidParam()), async (req, res) => {
     try {
         const reports = await Report.find({ reporterUid: req.params.uid })
             .sort({ date: -1, _id: -1 })
@@ -154,7 +185,7 @@ router.get("/users/:uid/reports", async (req, res) => {
 });
 
 // POST /api/admin/users/:uid/suspend
-router.post("/users/:uid/suspend", async (req, res) => {
+router.post("/users/:uid/suspend", validate(uidParam(), reasonRule), async (req, res) => {
     try {
         const { reason } = req.body;
         if (!reason || !reason.trim()) {
@@ -206,7 +237,7 @@ router.post("/users/:uid/suspend", async (req, res) => {
 });
 
 // POST /api/admin/users/:uid/unsuspend
-router.post("/users/:uid/unsuspend", async (req, res) => {
+router.post("/users/:uid/unsuspend", validate(uidParam()), async (req, res) => {
     try {
         const user = await User.findOneAndUpdate(
             { uid: req.params.uid },
@@ -321,7 +352,7 @@ router.get("/volunteers", async (req, res) => {
 });
 
 // POST /api/admin/volunteers/:uid/approve
-router.post("/volunteers/:uid/approve", async (req, res) => {
+router.post("/volunteers/:uid/approve", validate(uidParam()), async (req, res) => {
     try {
         const user = await User.findOneAndUpdate(
             { uid: req.params.uid },
@@ -366,7 +397,7 @@ router.post("/volunteers/:uid/approve", async (req, res) => {
 });
 
 // POST /api/admin/volunteers/:uid/reject
-router.post("/volunteers/:uid/reject", async (req, res) => {
+router.post("/volunteers/:uid/reject", validate(uidParam(), reasonRule), async (req, res) => {
     try {
         const { reason } = req.body;
         if (!reason || !reason.trim()) {
@@ -419,7 +450,7 @@ router.post("/volunteers/:uid/reject", async (req, res) => {
 });
 
 // POST /api/admin/volunteers/:uid/suspend
-router.post("/volunteers/:uid/suspend", async (req, res) => {
+router.post("/volunteers/:uid/suspend", validate(uidParam(), reasonRule), async (req, res) => {
     try {
         const { reason } = req.body;
         if (!reason || !reason.trim()) {
@@ -471,7 +502,7 @@ router.post("/volunteers/:uid/suspend", async (req, res) => {
 });
 
 // POST /api/admin/volunteers/:uid/unsuspend
-router.post("/volunteers/:uid/unsuspend", async (req, res) => {
+router.post("/volunteers/:uid/unsuspend", validate(uidParam()), async (req, res) => {
     try {
         const user = await User.findOneAndUpdate(
             { uid: req.params.uid },
@@ -615,7 +646,7 @@ router.get("/ngos", async (req, res) => {
 });
 
 // POST /api/admin/ngos
-router.post("/ngos", async (req, res) => {
+router.post("/ngos", validate(ngoCreateRules), async (req, res) => {
     const admin = require("../firebase-admin.js");
     try {
         const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
@@ -691,7 +722,7 @@ router.post("/ngos", async (req, res) => {
 });
 
 // PATCH /api/admin/ngos/:id
-router.patch("/ngos/:id", async (req, res) => {
+router.patch("/ngos/:id", validate(ngoPatchRules), async (req, res) => {
     try {
         const { id } = req.params;
 
@@ -782,7 +813,7 @@ router.delete("/ngos/:id", async (req, res) => {
 });
 
 // PATCH /api/admin/reports/:id/resolve
-router.patch("/reports/:id/resolve", async (req, res) => {
+router.patch("/reports/:id/resolve", validate(resolveRules), async (req, res) => {
     try {
         const { id } = req.params;
         const resolutionRemark = typeof req.body.resolutionRemark === "string"

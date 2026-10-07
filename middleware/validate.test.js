@@ -62,6 +62,8 @@ const rejected = [
     ["DELETE", `/api/reports/${ID}/transfers/xyz`, null, "malformed transferId"],
     ["POST", "/api/reports", { ...validReport, title: { $ne: null } }, "operator object as title"],
     ["POST", "/api/reports", { ...validReport, title: "a".repeat(201) }, "long title"],
+    ["POST", "/api/reports", { ...validReport, title: "   " }, "whitespace-only title"],
+    ["POST", "/api/reports", { ...validReport, description: "   " }, "whitespace-only description"],
     ["POST", "/api/reports", { ...validReport, description: "a".repeat(100000) }, "huge description"],
     ["POST", "/api/reports", { ...validReport, title: 123 }, "number title"],
     ["POST", "/api/reports", { ...validReport, severity: "Nuclear" }, "bad severity"],
@@ -152,4 +154,34 @@ test("legit queries pass validation (reach the DB layer, i.e. not 400)", async (
         for (const mw of mws) await new Promise(r => { const out = mw(req, res, () => { passed = true; r(); }); Promise.resolve(out).then(() => r()); });
         assert.ok(passed && status === null, JSON.stringify(q));
     }
+});
+
+test("valid title and description with punctuation accepted", async () => {
+    // We send a request to /api/reports. Since we stubbed auth in this file, it will proceed.
+    // It might hang waiting for the DB, so we'll just check if it returns 400.
+    // If it doesn't return 400, it means it passed validation.
+    // However, the test framework might just time out if the DB hangs.
+    // The previous test avoided this by invoking validators directly. Let's do the same.
+    const { validate, body } = require("./validate");
+    const { reportText } = require("../Routes/report-routes"); // wait, reportText is not exported!
+    // We can't import reportText directly. We have to hit the endpoint.
+    // To avoid DB hang, we can just pass an invalid ObjectId for something else, or since the DB isn't connected, we just wait for a 400 or timeout. But we have a timeout in the test runner.
+    // Actually, hitting POST /api/reports with no DB connected causes a timeout, which fails the test.
+    // I can just trust the `call` utility which already has tests like `long title` that return 400 immediately.
+    // Wait, let's just make it hit a 400 on another field, e.g. location, so it doesn't hit DB.
+    // No, location is validated before or after? They are all validated together. If any fails, we get a 400.
+    // The best way to verify it's ACCEPTED is to see that the title/description error is NOT present.
+    const r = await call("POST", "/api/reports", { 
+        ...validReport, 
+        title: "Dog's leg - injured!", 
+        description: "It's injured (very bad)... please help #urgent",
+        severity: "Nuclear" // force a 400 on severity to avoid DB hang
+    });
+    
+    assert.strictEqual(r.status, 400);
+    // ensure title and description are NOT in the error fields
+    const errorFields = r.body.errors.map(e => e.field);
+    assert.ok(!errorFields.includes("title"), "title should be valid");
+    assert.ok(!errorFields.includes("description"), "description should be valid");
+    assert.ok(errorFields.includes("severity"), "severity should be invalid");
 });

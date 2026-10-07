@@ -42,4 +42,22 @@ const pagination = [
 
 const idParam = name => param(name).isMongoId().withMessage(`${name} must be a valid id`);
 
-module.exports = { validate, str, point, pagination, idParam, lat, lng, body, query, param };
+// Required string, trimmed (the trimmed value is written back to req.body), non-empty, max length on the trimmed value.
+// Rejects objects/arrays/numbers/null, so Mongo operator payloads never get through.
+const requiredStr = (field, max) =>
+    body(field)
+        .isString().withMessage(`${field} is required and must be a string`).bail()
+        .trim()
+        .notEmpty().withMessage(`${field} cannot be empty`).bail()
+        .isLength({ max }).withMessage(`${field} must be at most ${max} characters`);
+
+// Firebase UID param. Firebase UIDs are opaque strings (<=128 chars, NOT Mongo ObjectIds), so only type/length/
+// no-whitespace-or-control-characters is enforced. Same 1..128 convention as users-routes/report-routes.
+const uidParam = (name = "uid") =>
+    param(name)
+        .isString().bail()
+        .isLength({ min: 1, max: 128 }).bail()
+        .matches(/^[^\s\x00-\x1f\x7f]+$/)
+        .withMessage(`${name} must be a valid user uid`);
+
+module.exports = { validate, str, requiredStr, point, pagination, idParam, uidParam, lat, lng, body, query, param };
