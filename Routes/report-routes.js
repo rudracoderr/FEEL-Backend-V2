@@ -82,12 +82,13 @@ const REPORT_LIST_PROJECTION = {
     location: 1, address: 1, landmark: 1, date: 1,
     reporterName: 1, reporterUid: 1, imageUrls: 1,
     "assistance.status": 1, "assistance.requestedAt": 1,
-    "assistance.acceptedByUid": 1, "assistance.acceptedByName": 1, "assistance.acceptedByPhone": 1,
+    "assistance.acceptedByUid": 1, "assistance.acceptedByName": 1,
     transferStatus: 1, currentHandlerType: 1, currentNgoId: 1
 };
 
 // Public detail projection — used by GET /:id for unauthenticated callers.
-// Strips all PII: reporterContact, reporterDeviceToken, assignedVolunteer.phone, assignedVolunteer.email.
+// Strips all PII: reporterContact, reporterDeviceToken, assignedVolunteer.phone,
+// assignedVolunteer.email, assistance.acceptedByPhone, resolutionDetails.resolvedByUid.
 // reporterUid is retained for client-side reporter/volunteer gate logic.
 const REPORT_DETAIL_PROJECTION = {
     title: 1, description: 1, severity: 1, status: 1,
@@ -95,18 +96,20 @@ const REPORT_DETAIL_PROJECTION = {
     acceptedAt: 1, resolvedAt: 1, volunteerProgress: 1, progressUpdatedAt: 1,
     location: 1, address: 1, landmark: 1, date: 1,
     reporterName: 1, reporterUid: 1, imageUrls: 1,
-    resolutionRemark: 1, resolutionDetails: 1,
+    resolutionRemark: 1,
+    "resolutionDetails.photoUrl": 1, "resolutionDetails.note": 1, "resolutionDetails.resolvedAt": 1,
     "assistance.status": 1, "assistance.requestedAt": 1,
-    "assistance.acceptedByUid": 1, "assistance.acceptedByName": 1, "assistance.acceptedByPhone": 1,
+    "assistance.acceptedByUid": 1, "assistance.acceptedByName": 1,
     transferStatus: 1, currentHandlerType: 1, currentNgoId: 1
 };
 
 // Extended detail projection for approved paid volunteers.
-// Adds assignedVolunteer.phone so they can call the responding volunteer.
-// Phone is intentionally NOT in the public projection.
+// Adds assignedVolunteer.phone so they can call the responding volunteer,
+// and assistance.acceptedByPhone so the assigned volunteer can reach the paid volunteer.
 const REPORT_DETAIL_PROJECTION_PAID_VOLUNTEER = {
     ...REPORT_DETAIL_PROJECTION,
-    "assignedVolunteer.phone": 1
+    "assignedVolunteer.phone": 1,
+    "assistance.acceptedByPhone": 1
 };
 
 // NOTE: requireAuth is applied per-route below.

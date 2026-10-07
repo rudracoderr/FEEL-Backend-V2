@@ -12,12 +12,19 @@ async function requireNgo(req, res, next) {
             });
         }
 
-        const user = await User.findOne({ uid: req.authUid }).select("uid role email ngoId");
+        const user = await User.findOne({ uid: req.authUid }).select("uid role email ngoId isSuspended");
 
         if (!user || (user.role !== "ngo_admin" && user.role !== "ngo_member")) {
             return res.status(403).json({
                 success: false,
                 message: "Forbidden - NGO access required"
+            });
+        }
+
+        if (user.isSuspended) {
+            return res.status(403).json({
+                success: false,
+                message: "Your NGO account is suspended."
             });
         }
 

@@ -9,7 +9,7 @@ async function requireAdmin(req, res, next) {
             });
         }
 
-        const user = await User.findOne({ uid: req.authUid }).select("uid role email");
+        const user = await User.findOne({ uid: req.authUid }).select("uid role email isSuspended");
         
         console.log("[requireAdmin] req.authUid =", req.authUid);
         console.log("[requireAdmin] user =", user);
@@ -20,6 +20,13 @@ async function requireAdmin(req, res, next) {
             return res.status(403).json({
                 success: false,
                 message: "Forbidden"
+            });
+        }
+
+        if (user.isSuspended) {
+            return res.status(403).json({
+                success: false,
+                message: "Your admin account is suspended."
             });
         }
 
