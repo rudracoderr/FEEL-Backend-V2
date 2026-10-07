@@ -626,7 +626,7 @@ router.patch("/:id/accept", requireAuth, async (req, res) => {
         if (report.reporterUid === req.authUid) {
             return res.status(403).json({
                 success: false,
-                message: "You cannot accept your own rescue request."
+                message: "You cannot claim your own rescue report."
             });
         }
 
