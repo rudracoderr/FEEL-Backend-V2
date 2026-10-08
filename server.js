@@ -106,8 +106,10 @@ app.get("/", (req, res) => {
       message: "Server Running"
    });
 
+});
 
-
+app.get("/debug-sentry", function mainHandler(req, res) {
+  throw new Error("My first Sentry error!");
 });
 
 // The error handler must be registered before any other error middleware and after all controllers
