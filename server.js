@@ -1,3 +1,16 @@
+require("dotenv").config();
+const Sentry = require("@sentry/node");
+const { nodeProfilingIntegration } = require("@sentry/profiling-node");
+
+Sentry.init({
+  dsn: "https://08449e946b9a008689082e074aae6192@o4512220716400640.ingest.us.sentry.io/4512220722167813",
+  integrations: [
+    nodeProfilingIntegration(),
+  ],
+  tracesSampleRate: 1.0, 
+  profilesSampleRate: 1.0,
+});
+
 const express = require("express");
 const mongoose = require("mongoose");
 const helmet = require("helmet");
@@ -16,7 +29,7 @@ const notificationRoutes = require("./Routes/notification-routes");
 const admin = require("./firebase-admin");
 console.log("SERVER STARTED", new Date().toISOString());
 
-require("dotenv").config();
+// require("dotenv").config(); moved to the top for Sentry
 const dns = require("dns");
 dns.setDefaultResultOrder("ipv4first");
 
@@ -96,6 +109,9 @@ app.get("/", (req, res) => {
 
 
 });
+
+// The error handler must be registered before any other error middleware and after all controllers
+Sentry.setupExpressErrorHandler(app);
 
 async function startServer() {
    try {
