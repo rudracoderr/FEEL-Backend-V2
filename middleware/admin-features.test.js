@@ -21,7 +21,13 @@ for (const name of ["requireAuth", "requireAdmin"]) {
     stub(`./${name}`, (req, res, next) => { req.authUid = "admin1"; req.adminUser = { uid: "admin1", email: "admin@feel.org" }; next(); });
 }
 
-const calls = { audit: [], insertMany: [], multicast: [], updateMany: [], reportUpdate: [] };
+const calls = { audit: [], insertMany: [], multicast: [], updateMany: [], reportUpdate: [], firebaseDelete: [], firebaseCreate: [] };
+const fakeAuth = {
+    createUser: async (d) => { calls.firebaseCreate.push(d); return { uid: "fb_" + (d.email.split("@")[0]) }; },
+    getUserByEmail: async (email) => ({ uid: "fb_existing_" + (email.split("@")[0]) }),
+    generatePasswordResetLink: async (email) => `https://feel.auth/reset?email=${encodeURIComponent(email)}`,
+    deleteUser: async (uid) => { calls.firebaseDelete.push(uid); }
+};
 const M = {
     User: {}, Report: {}, AbuseReport: {}, Ngo: {}, NgoTransfer: {}, AdoptionListing: {},
     Notification: { insertMany: async (docs) => { calls.insertMany.push(docs); return docs; } },
@@ -32,7 +38,7 @@ const M = {
     },
     AuditLog: { create: async (d) => { calls.audit.push(d); return d; } }
 };
-M.AuditLog.schema = { path: () => ({ enumValues: ["User Suspended", "Report Resolved"] }) };
+M.AuditLog.schema = { path: () => ({ enumValues: ["User Suspended", "Report Resolved", "Paid Volunteer Approved", "Paid Volunteer Created"] }) };
 
 stub("../Models/usermodel", M.User);
 stub("../Models/report-model", M.Report);
@@ -43,7 +49,7 @@ stub("../Models/audit-log-model", M.AuditLog);
 stub("../Models/adoption-listing-model", M.AdoptionListing);
 stub("../Models/notification-model", M.Notification);
 stub("../Models/broadcast-model", M.Broadcast);
-stub("../firebase-admin", { isFirebaseAdminInitialized: () => true });
+stub("../firebase-admin", { isFirebaseAdminInitialized: () => true, auth: () => fakeAuth });
 let multicastResult = { accepted: 0, failed: 0, staleTokens: [] };
 stub("../Services/notification-service", { sendAnnouncementMulticast: async (tokens, p) => { calls.multicast.push({ tokens, p }); return multicastResult; } });
 
@@ -257,4 +263,174 @@ test("preview with single-user audience accepts valid uid and applies suspension
     assert.strictEqual(r.status, 200);
     assert.deepStrictEqual(capturedFilter, { isSuspended: { $ne: true }, uid: "user_abc123", deviceToken: { $exists: true, $nin: [null, ""] } });
 });
+
+// ── search users by email ────────────────────────────────────────────────
+test("search-by-email: queries prefix case-insensitively and returns safe summary", async () => {
+    let capturedFilter, capturedSelect;
+    M.User.find = (f) => {
+        capturedFilter = f;
+        return {
+            limit: () => ({
+                select: (s) => {
+                    capturedSelect = s;
+                    return q([
+                        { uid: "u1", email: "alice@example.com", fullName: "Alice", isPaidVolunteer: false, paidVolunteerStatus: "none" }
+                    ]);
+                }
+            })
+        };
+    };
+
+    const r = await call("GET", "/api/admin/users/search-by-email?q=Ali");
+    assert.strictEqual(r.status, 200);
+    assert.strictEqual(r.body.count, 1);
+    assert.strictEqual(r.body.users[0].email, "alice@example.com");
+    assert.match(capturedFilter.email.source, /^\^ali/i);
+    assert.ok(!capturedSelect.includes("deviceToken"), "must not expose deviceToken");
+});
+
+test("search-by-email: rejects missing or empty query with 400", async () => {
+    assert.strictEqual((await call("GET", "/api/admin/users/search-by-email")).status, 400);
+    assert.strictEqual((await call("GET", "/api/admin/users/search-by-email?q=")).status, 400);
+});
+
+// ── create / convert paid volunteer ──────────────────────────────────────
+test("create paid volunteer: converts existing user to approved, preserves suspension", async () => {
+    calls.audit.length = 0;
+    const existing = {
+        _id: ID,
+        uid: "u_exist",
+        email: "bob@example.com",
+        fullName: "Bob",
+        isSuspended: true,
+        suspensionReason: "Spammy",
+        isPaidVolunteer: false,
+        paidVolunteerStatus: "none"
+    };
+    M.User.findOne = async () => existing;
+
+    let updatedSet;
+    M.User.findByIdAndUpdate = (id, u) => {
+        updatedSet = u.$set;
+        return q({ ...existing, ...u.$set });
+    };
+
+    const r = await call("POST", "/api/admin/paid-volunteers", {
+        email: "Bob@Example.COM",
+        status: "approved"
+    });
+
+    assert.strictEqual(r.status, 200);
+    assert.strictEqual(r.body.isNewUser, false);
+    assert.strictEqual(r.body.user.isPaidVolunteer, true);
+    assert.strictEqual(r.body.user.paidVolunteerStatus, "approved");
+    assert.strictEqual(updatedSet.isPaidVolunteer, true);
+    assert.strictEqual(updatedSet.paidVolunteerStatus, "approved");
+    assert.strictEqual(r.body.warning, "User account remains suspended.");
+    assert.strictEqual(calls.audit[0].action, "Paid Volunteer Approved");
+    assert.strictEqual(calls.audit[0].targetId, "u_exist");
+});
+
+test("create paid volunteer: existing user already approved -> 409", async () => {
+    M.User.findOne = async () => ({
+        _id: ID,
+        uid: "u_approved",
+        email: "done@example.com",
+        isPaidVolunteer: true,
+        paidVolunteerStatus: "approved"
+    });
+
+    const r = await call("POST", "/api/admin/paid-volunteers", { email: "done@example.com", status: "approved" });
+    assert.strictEqual(r.status, 409);
+    assert.match(r.body.message, /already an approved paid volunteer/);
+});
+
+test("create paid volunteer: existing user already pending with pending request -> 409", async () => {
+    M.User.findOne = async () => ({
+        _id: ID,
+        uid: "u_pending",
+        email: "pending@example.com",
+        isPaidVolunteer: false,
+        paidVolunteerStatus: "pending"
+    });
+
+    const r = await call("POST", "/api/admin/paid-volunteers", { email: "pending@example.com", status: "pending" });
+    assert.strictEqual(r.status, 409);
+    assert.match(r.body.message, /already has a pending paid volunteer application/);
+});
+
+test("create paid volunteer: creates new Firebase user + Mongo document when user is new", async () => {
+    calls.audit.length = 0; calls.firebaseCreate.length = 0;
+    M.User.findOne = async () => null; // not in mongo
+
+    let createdMongoDoc = null;
+    M.User.create = async (doc) => {
+        createdMongoDoc = doc;
+        return { _id: ID, ...doc, createdAt: new Date() };
+    };
+
+    const r = await call("POST", "/api/admin/paid-volunteers", {
+        email: "newvolunteer@feel.org",
+        fullName: "New Vol",
+        phone: "+919876543210",
+        city: "Mumbai",
+        status: "approved"
+    });
+
+    assert.strictEqual(r.status, 201);
+    assert.strictEqual(r.body.isNewUser, true);
+    assert.strictEqual(r.body.user.email, "newvolunteer@feel.org");
+    assert.strictEqual(r.body.user.isPaidVolunteer, true);
+    assert.strictEqual(r.body.user.paidVolunteerStatus, "approved");
+    assert.ok(r.body.credentials.temporaryPassword, "temporary password returned");
+    assert.ok(r.body.credentials.resetLink, "password reset link returned");
+    assert.strictEqual(calls.firebaseCreate[0].email, "newvolunteer@feel.org");
+    assert.strictEqual(calls.firebaseCreate[0].phoneNumber, "+919876543210");
+    assert.strictEqual(createdMongoDoc.uid, "fb_newvolunteer");
+    assert.strictEqual(calls.audit[0].action, "Paid Volunteer Approved");
+});
+
+test("create paid volunteer: rolls back Firebase user if MongoDB create fails", async () => {
+    calls.firebaseDelete.length = 0;
+    M.User.findOne = async () => null;
+    M.User.create = async () => { throw new Error("Mongo connection dropped"); };
+
+    const r = await call("POST", "/api/admin/paid-volunteers", {
+        email: "failcase@feel.org"
+    });
+
+    assert.strictEqual(r.status, 500);
+    assert.strictEqual(calls.firebaseDelete.length, 1);
+    assert.strictEqual(calls.firebaseDelete[0], "fb_failcase");
+});
+
+test("create paid volunteer: reuses existing Firebase account if email already in Firebase", async () => {
+    M.User.findOne = async () => null;
+    fakeAuth.createUser = async () => {
+        const err = new Error("Account exists");
+        err.code = "auth/email-already-exists";
+        throw err;
+    };
+
+    let createdDoc = null;
+    M.User.create = async (doc) => {
+        createdDoc = doc;
+        return { _id: ID, ...doc, createdAt: new Date() };
+    };
+
+    const r = await call("POST", "/api/admin/paid-volunteers", {
+        email: "existing_firebase@feel.org",
+        status: "pending"
+    });
+
+    assert.strictEqual(r.status, 201);
+    assert.strictEqual(r.body.isNewUser, true);
+    assert.strictEqual(createdDoc.uid, "fb_existing_existing_firebase");
+    assert.strictEqual(createdDoc.paidVolunteerStatus, "pending");
+    assert.strictEqual(createdDoc.isPaidVolunteer, false);
+
+    // Restore standard mock
+    fakeAuth.createUser = async (d) => ({ uid: "fb_" + (d.email.split("@")[0]) });
+});
+
 

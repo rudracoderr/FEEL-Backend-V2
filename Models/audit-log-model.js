@@ -24,7 +24,7 @@ const auditLogSchema = new mongoose.Schema({
             "Volunteer Unassigned",
             "Report Resolved", "Report Marked Fake", "Report Marked Pending", "Report Deleted",
             "NGO Created", "NGO Updated", "NGO Archived",
-            "Paid Volunteer Approved", "Paid Volunteer Rejected",
+            "Paid Volunteer Created", "Paid Volunteer Approved", "Paid Volunteer Rejected",
             "Paid Volunteer Suspended", "Paid Volunteer Unsuspended",
             "Abuse Report Dismissed", "Notification Broadcast"
         ]

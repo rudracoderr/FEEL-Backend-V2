@@ -36,6 +36,14 @@ const resolveRules = [
     requiredStr("resolutionRemark", 2000),
     str("resolvedBy", 100) // accepted for backwards compatibility but ignored: the actor comes from the verified token
 ];
+const createPaidVolunteerRules = [
+    requiredStr("email", 254).bail().isEmail().withMessage("email is invalid"),
+    str("fullName", 100),
+    body("phone").optional({ values: "falsy" }).isString().bail().trim()
+        .matches(/^[0-9+()\-.\s]{0,20}$/).withMessage("phone format is invalid"),
+    str("city", 100),
+    body("status").optional().isIn(["approved", "pending"]).withMessage("status must be approved or pending")
+];
 
 // Shared list filters (page/limit come from validate.pagination: limit max 50).
 const searchRule = query("search").optional().isString().withMessage("search must be a string").bail()
@@ -183,6 +191,24 @@ router.get("/users", validate(listRules, inRule("status", ["active", "suspended"
         return res.status(200).json({ success: true, count: users.length, users, pagination: pageMeta(total, page, limit) });
     } catch (error) {
         return fail(res, error, "GET /users");
+    }
+});
+
+// GET /api/admin/users/search-by-email?q=<prefix> (autocomplete)
+router.get("/users/search-by-email", validate(
+    query("q").isString().withMessage("q must be a string").bail()
+        .trim().isLength({ min: 1, max: 100 }).withMessage("q must be between 1 and 100 characters")
+), async (req, res) => {
+    try {
+        const q = req.query.q.trim().toLowerCase();
+        const rx = new RegExp("^" + escapeRegex(q), "i");
+        const users = await User.find({ email: rx })
+            .limit(10)
+            .select("uid email fullName phone city isVolunteer volunteerStatus isPaidVolunteer paidVolunteerStatus isSuspended")
+            .lean();
+        return res.status(200).json({ success: true, count: users.length, users });
+    } catch (error) {
+        return fail(res, error, "GET /users/search-by-email");
     }
 });
 
@@ -419,6 +445,160 @@ for (const [name, t] of Object.entries(PAID_TRANSITIONS)) {
         }
     });
 }
+
+// POST /api/admin/paid-volunteers — convert existing user or provision new paid volunteer account.
+router.post("/paid-volunteers", validate(createPaidVolunteerRules), async (req, res) => {
+    const firebaseAdmin = require("../firebase-admin");
+    try {
+        const email = req.body.email.trim().toLowerCase();
+        const status = req.body.status === "pending" ? "pending" : "approved";
+
+        // CASE A: Existing FEEL user in MongoDB
+        let user = await User.findOne({ email });
+
+        if (user) {
+            if (user.isPaidVolunteer && user.paidVolunteerStatus === "approved") {
+                return res.status(409).json({
+                    success: false,
+                    message: "This user is already an approved paid volunteer.",
+                    user
+                });
+            }
+
+            if (user.paidVolunteerStatus === "pending" && status === "pending") {
+                return res.status(409).json({
+                    success: false,
+                    message: "This user already has a pending paid volunteer application.",
+                    user
+                });
+            }
+
+            const update = {
+                isPaidVolunteer: status === "approved",
+                paidVolunteerStatus: status,
+                paidVolunteerReviewedAt: status === "approved" ? new Date() : null,
+                paidVolunteerReviewedBy: status === "approved" ? (req.adminUser.email || req.adminUser.uid) : null,
+                paidVolunteerReason: status === "approved"
+                    ? "Approved as paid volunteer by admin"
+                    : "Registered as paid volunteer by admin"
+            };
+
+            if (typeof req.body.fullName === "string" && req.body.fullName.trim() && !user.fullName) {
+                update.fullName = req.body.fullName.trim();
+            }
+            if (typeof req.body.phone === "string" && req.body.phone.trim() && !user.phone) {
+                update.phone = req.body.phone.trim();
+            }
+            if (typeof req.body.city === "string" && req.body.city.trim() && !user.city) {
+                update.city = req.body.city.trim();
+            }
+
+            user = await User.findByIdAndUpdate(user._id, { $set: update }, { new: true, runValidators: true })
+                .select(PAID_FIELDS);
+
+            const auditAction = status === "approved" ? "Paid Volunteer Approved" : "Paid Volunteer Created";
+            await audit(req, auditAction, user.uid, `Existing user converted to ${status} paid volunteer`);
+
+            return res.status(200).json({
+                success: true,
+                isNewUser: false,
+                user,
+                warning: user.isSuspended ? "User account remains suspended." : undefined,
+                message: `Existing user updated to ${status} paid volunteer.`
+            });
+        }
+
+        // CASE B: New user — provision Firebase account + MongoDB profile
+        let userRecord = null;
+        let isReusedFbUser = false;
+        const temporaryPassword = crypto.randomBytes(16).toString("base64url");
+        const phone = typeof req.body.phone === "string" ? req.body.phone.trim() : "";
+        const e164 = phone.startsWith("+") && /^\+[1-9]\d{1,14}$/.test(phone) ? phone : undefined;
+
+        try {
+            userRecord = await firebaseAdmin.auth().createUser({
+                email,
+                password: temporaryPassword,
+                displayName: typeof req.body.fullName === "string" && req.body.fullName.trim() ? req.body.fullName.trim() : undefined,
+                phoneNumber: e164
+            });
+        } catch (fbErr) {
+            console.error("[admin] POST /paid-volunteers firebase createUser failed:", fbErr.code || fbErr.message);
+            if (fbErr.code === "auth/email-already-exists") {
+                userRecord = await firebaseAdmin.auth().getUserByEmail(email);
+                isReusedFbUser = true;
+            } else {
+                const known = {
+                    "auth/phone-number-already-exists": [409, "An account with this phone number already exists."],
+                    "auth/invalid-phone-number": [400, "Phone number must be in E.164 format (e.g. +911234567890)."],
+                    "auth/invalid-password": [400, "Password is not accepted."],
+                    "auth/invalid-email": [400, "Email is invalid."]
+                }[fbErr.code];
+                return res.status(known ? known[0] : 500).json({
+                    success: false,
+                    message: known ? known[1] : "Failed to create Firebase user account."
+                });
+            }
+        }
+
+        let resetLink = null;
+        try {
+            resetLink = await firebaseAdmin.auth().generatePasswordResetLink(email);
+        } catch (linkErr) {
+            console.warn("[admin] generatePasswordResetLink failed:", linkErr.message);
+        }
+
+        try {
+            user = await User.create({
+                uid: userRecord.uid,
+                email,
+                fullName: typeof req.body.fullName === "string" ? req.body.fullName.trim() : "",
+                phone: phone,
+                city: typeof req.body.city === "string" ? req.body.city.trim() : "",
+                role: "user",
+                isPaidVolunteer: status === "approved",
+                paidVolunteerStatus: status,
+                paidVolunteerReviewedAt: status === "approved" ? new Date() : null,
+                paidVolunteerReviewedBy: status === "approved" ? (req.adminUser.email || req.adminUser.uid) : null,
+                paidVolunteerReason: status === "approved"
+                    ? "Created as approved paid volunteer by admin"
+                    : "Created as pending paid volunteer by admin",
+                location: { type: "Point", coordinates: [0, 0] }
+            });
+
+            const auditAction = status === "approved" ? "Paid Volunteer Approved" : "Paid Volunteer Created";
+            await audit(req, auditAction, user.uid, `New user created as ${status} paid volunteer`);
+
+            return res.status(201).json({
+                success: true,
+                isNewUser: true,
+                user: {
+                    uid: user.uid,
+                    email: user.email,
+                    fullName: user.fullName,
+                    phone: user.phone,
+                    city: user.city,
+                    isPaidVolunteer: user.isPaidVolunteer,
+                    paidVolunteerStatus: user.paidVolunteerStatus,
+                    createdAt: user.createdAt
+                },
+                credentials: {
+                    email,
+                    temporaryPassword: isReusedFbUser ? null : temporaryPassword,
+                    resetLink
+                },
+                message: `New user account created as ${status} paid volunteer.`
+            });
+        } catch (dbErr) {
+            if (userRecord && !isReusedFbUser) {
+                await firebaseAdmin.auth().deleteUser(userRecord.uid).catch((e) => console.error("[admin] rollback firebase failed:", e.message));
+            }
+            throw dbErr;
+        }
+    } catch (error) {
+        return fail(res, error, "POST /paid-volunteers");
+    }
+});
 
 // ───────────────────────── audit logs ─────────────────────────
 
