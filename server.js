@@ -61,7 +61,9 @@ const globalLimiter = rateLimit({
 
 // CORS_ORIGINS = comma-separated list of trusted browser origins (admin dashboard, NGO portal).
 // Requests without an Origin header (React Native / curl / server-to-server) are not browser
-// cross-origin requests and are always allowed. Outside production, localhost origins are allowed.
+// cross-origin requests and are always allowed.
+// If CORS_ORIGINS is not set, allow all origins by default so deployments work out of the box.
+// When CORS_ORIGINS is set, allow listed origins as well as any local origin (localhost/127.0.0.1).
 const allowedOrigins = (process.env.CORS_ORIGINS || "")
    .split(",").map((o) => o.trim().replace(/\/$/, "")).filter(Boolean);
 const isLocalOrigin = (o) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(o);
@@ -69,8 +71,9 @@ const isLocalOrigin = (o) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test
 const corsOptions = {
    origin: (origin, callback) => {
       if (!origin) return callback(null, true);
+      if (allowedOrigins.length === 0) return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);
-      if (process.env.NODE_ENV !== "production" && isLocalOrigin(origin)) return callback(null, true);
+      if (isLocalOrigin(origin)) return callback(null, true);
       return callback(null, false); // no CORS headers => browser blocks it
    },
    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
@@ -121,9 +124,11 @@ app.get("/", (req, res) => {
    
 });
 
-app.get("/debug-sentry", function mainHandler(req, res) {
-  throw new Error("My first Sentry error!");
-});
+if (process.env.NODE_ENV !== "production") {
+   app.get("/debug-sentry", function mainHandler(req, res) {
+      throw new Error("My first Sentry error!");
+   });
+}
 
 // The error handler must be registered before any other error middleware and after all controllers
 Sentry.setupExpressErrorHandler(app);
