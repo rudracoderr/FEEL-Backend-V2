@@ -37,6 +37,10 @@ const ngoSchema = new mongoose.Schema(
             type: Boolean,
             default: true
         },
+        archivedAt: {
+            type: Date,
+            default: null
+        },
         stats: {
             totalCases: { type: Number, default: 0 },
             activeCases: { type: Number, default: 0 },

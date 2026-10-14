@@ -49,7 +49,7 @@ router.get("/me", async (req, res) => {
     } catch (error) {
         return res.status(500).json({
             success: false,
-            message: error.message
+            message: "Internal server error"
         });
     }
 });
@@ -80,7 +80,7 @@ router.get("/transfers", validate(
             transfers
         });
     } catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
+        return res.status(500).json({ success: false, message: "Internal server error" });
     }
 });
 
@@ -272,7 +272,7 @@ router.patch("/transfers/:id/accept", async (req, res) => {
 
     } catch (error) {
         console.error("[accept] Unexpected error:", error.message);
-        return res.status(500).json({ success: false, message: error.message });
+        return res.status(500).json({ success: false, message: "Internal server error" });
     }
 });
 
@@ -367,7 +367,7 @@ router.patch("/transfers/:id/reject", validate(str("remarks", 1000)), async (req
 
     } catch (error) {
         console.error("[reject] Unexpected error:", error.message);
-        return res.status(500).json({ success: false, message: error.message });
+        return res.status(500).json({ success: false, message: "Internal server error" });
     }
 });
 
@@ -529,7 +529,7 @@ router.patch("/transfers/:id/close", validate(str("closureRemarks", 1000)), asyn
 
     } catch (error) {
         console.error("[close] Unexpected error:", error.message);
-        return res.status(500).json({ success: false, message: error.message });
+        return res.status(500).json({ success: false, message: "Internal server error" });
     }
 });
 

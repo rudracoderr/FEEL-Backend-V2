@@ -47,8 +47,11 @@ const notificationSchema = new mongoose.Schema({
             "rescue_on_the_way",
             "rescue_reached_location",
             "rescue_completed",
-            "rescue_completed_reporter"
+            "rescue_completed_reporter",
             // ─────────────────────────────────────────────────────────────────────
+
+            // Manual admin broadcast (see Models/broadcast-model.js)
+            "admin_announcement"
         ],
         required: true
     },
@@ -70,6 +73,7 @@ const notificationSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    broadcastId: { type: String, default: "" },
     createdAt: {
         type: Date,
         default: Date.now

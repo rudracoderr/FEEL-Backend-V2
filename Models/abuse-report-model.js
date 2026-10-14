@@ -18,7 +18,17 @@ const abuseReportSchema = new mongoose.Schema({
     createdAt: {
         type: Date,
         default: Date.now
-    }
+    },
+    // Lifecycle. Legacy documents lack this field and are treated as "pending" by admin queries.
+    status: {
+        type: String,
+        enum: ["pending", "dismissed", "action_taken"],
+        default: "pending"
+    },
+    reviewedByUid: { type: String, default: null },
+    reviewedByEmail: { type: String, default: null },
+    reviewedAt: { type: Date, default: null },
+    reviewNote: { type: String, trim: true, default: "" }
 });
 
 // Compound unique index to prevent the same user from reporting the same rescue multiple times

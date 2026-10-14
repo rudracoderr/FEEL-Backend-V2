@@ -433,7 +433,7 @@ router.get("/claimed/:uid", requireAuth, validate(uidParam), async (req, res) =>
     } catch (error) {
         return res.status(500).json({
             success: false,
-            message: error.message
+            message: "Internal server error"
         });
     }
 });
@@ -469,7 +469,7 @@ router.get("/by-reporter/:uid", requireAuth, validate(uidParam), async (req, res
     } catch (error) {
         return res.status(500).json({
             success: false,
-            message: error.message
+            message: "Internal server error"
         });
     }
 });
@@ -484,7 +484,7 @@ router.get("/ngos", requireAuth, async (req, res) => {
         const ngos = await Ngo.find({}).select("_id name").sort({ name: 1 }).lean();
         return res.status(200).json({ success: true, ngos });
     } catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
+        return res.status(500).json({ success: false, message: "Internal server error" });
     }
 });
 
@@ -596,7 +596,7 @@ router.get("/:id/nearby-paid-volunteers",
         } catch (error) {
             return res.status(500).json({
                 success: false,
-                message: error.message
+                message: "Internal server error"
             });
         }
     });
@@ -1406,7 +1406,7 @@ router.post("/:id/abuse", abuseReportLimiter, requireAuth, requireActiveUser, va
     } catch (error) {
         return res.status(500).json({
             success: false,
-            message: error.message
+            message: "Internal server error"
         });
     }
 });
@@ -1458,7 +1458,7 @@ router.patch("/:id/request-assistance", requireAuth, async (req, res) => {
 
         return res.status(200).json({ success: true, report: updatedReport });
     } catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
+        return res.status(500).json({ success: false, message: "Internal server error" });
     }
 });
 
@@ -1547,7 +1547,7 @@ router.patch("/:id/accept-assistance", requireAuth, async (req, res) => {
 
         return res.status(200).json({ success: true, report: updatedReport });
     } catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
+        return res.status(500).json({ success: false, message: "Internal server error" });
     }
 });
 
@@ -1749,7 +1749,7 @@ router.post("/:id/transfers", requireAuth, requireActiveUser, validate(
                 message: "An active transfer request already exists for this rescue."
             });
         }
-        return res.status(500).json({ success: false, message: error.message });
+        return res.status(500).json({ success: false, message: "Internal server error" });
     }
 });
 
@@ -1798,7 +1798,7 @@ router.delete("/:id/transfers/:transferId", requireAuth, requireActiveUser, asyn
 
         return res.status(200).json({ success: true, transfer });
     } catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
+        return res.status(500).json({ success: false, message: "Internal server error" });
     }
 });
 

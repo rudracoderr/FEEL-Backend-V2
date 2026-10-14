@@ -21,7 +21,12 @@ const auditLogSchema = new mongoose.Schema({
             "Volunteer Unsuspended",
             "Volunteer Assigned",
             "Volunteer Reassigned",
-            "Volunteer Unassigned"
+            "Volunteer Unassigned",
+            "Report Resolved", "Report Marked Fake", "Report Marked Pending", "Report Deleted",
+            "NGO Created", "NGO Updated", "NGO Archived",
+            "Paid Volunteer Approved", "Paid Volunteer Rejected",
+            "Paid Volunteer Suspended", "Paid Volunteer Unsuspended",
+            "Abuse Report Dismissed", "Notification Broadcast"
         ]
     },
     targetId: {
@@ -38,6 +43,8 @@ const auditLogSchema = new mongoose.Schema({
         default: ""
     }
 });
+
+auditLogSchema.index({ timestamp: -1 });
 
 const AuditLog = mongoose.model("AuditLog", auditLogSchema);
 

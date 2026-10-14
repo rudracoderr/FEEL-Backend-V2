@@ -59,8 +59,20 @@ const globalLimiter = rateLimit({
    }
 });
 
+// CORS_ORIGINS = comma-separated list of trusted browser origins (admin dashboard, NGO portal).
+// Requests without an Origin header (React Native / curl / server-to-server) are not browser
+// cross-origin requests and are always allowed. Outside production, localhost origins are allowed.
+const allowedOrigins = (process.env.CORS_ORIGINS || "")
+   .split(",").map((o) => o.trim().replace(/\/$/, "")).filter(Boolean);
+const isLocalOrigin = (o) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(o);
+
 const corsOptions = {
-   origin: true,
+   origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (process.env.NODE_ENV !== "production" && isLocalOrigin(origin)) return callback(null, true);
+      return callback(null, false); // no CORS headers => browser blocks it
+   },
    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
    credentials: true,
@@ -106,6 +118,7 @@ app.get("/", (req, res) => {
       message: "Server Running"
    });
 
+   
 });
 
 app.get("/debug-sentry", function mainHandler(req, res) {

@@ -461,10 +461,39 @@ async function notifyNearbyPaidVolunteers(report) {
     }
 }
 
+// Manual admin announcement push. Sends in chunks of 500 (FCM multicast limit).
+// `accepted` = FCM accepted the message, NOT confirmed device delivery.
+// Never throws for per-token failures.
+async function sendAnnouncementMulticast(tokens, { title, body, data = {} }) {
+    const result = { accepted: 0, failed: 0, staleTokens: [] };
+    const safeData = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v ?? "")]));
+
+    for (let i = 0; i < tokens.length; i += 500) {
+        const chunk = tokens.slice(i, i + 500);
+        try {
+            const res = await admin.messaging().sendEachForMulticast({
+                tokens: chunk,
+                notification: { title, body },
+                data: safeData
+            });
+            result.accepted += res.successCount;
+            result.failed += res.failureCount;
+            res.responses.forEach((r, idx) => {
+                if (!r.success && isStaleTokenError(r.error)) result.staleTokens.push(chunk[idx]);
+            });
+        } catch (error) {
+            console.error("Announcement multicast chunk failed:", error?.code || error?.message);
+            result.failed += chunk.length;
+        }
+    }
+    return result;
+}
+
 module.exports = {
     notifyUsersWithinRadius,
     sendNotificationToToken,
     createNotification,
+    sendAnnouncementMulticast,
     checkNearbyPaidVolunteersExist,
     notifyNearbyPaidVolunteers,
     calculateDistanceKm,

@@ -166,7 +166,7 @@ router.patch("/:uid/device-token", validate(uidParam, deviceTokenRule), async (r
     } catch (error) {
         return res.status(500).json({
             success: false,
-            message: error.message
+            message: "Internal server error"
         });
     }
 });
@@ -226,7 +226,7 @@ router.patch("/:uid/availability", validate(uidParam, point("location")), async 
     } catch (error) {
         return res.status(500).json({
             success: false,
-            message: error.message
+            message: "Internal server error"
         });
     }
 });
@@ -266,8 +266,7 @@ router.get("/:uid", validate(uidParam), async (req, res) => {
     } catch (error) {
         console.error("Get user by uid failed:", error);
         return res.status(500).json({
-            error: "Failed to fetch user",
-            details: error.message
+            error: "Failed to fetch user"
         });
     }
 });

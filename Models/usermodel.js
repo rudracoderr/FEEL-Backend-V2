@@ -113,6 +113,10 @@ const userSchema = new mongoose.Schema({
         default: "none"
     },
 
+    paidVolunteerReason: { type: String, default: null },
+    paidVolunteerReviewedAt: { type: Date, default: null },
+    paidVolunteerReviewedBy: { type: String, default: null },
+
     rescueRadius: {
         type: Number,
         default: 10

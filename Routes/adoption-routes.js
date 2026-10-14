@@ -78,7 +78,7 @@ router.get("/", async (req, res) => {
     } catch (error) {
         return res.status(500).json({
             success: false,
-            message: error.message
+            message: "Internal server error"
         });
     }
 });
@@ -90,7 +90,7 @@ router.get("/my-listings", requireAuth, async (req, res) => {
         const adoptionListings = await AdoptionListing.find({ ownerUid: req.authUid }).sort({ createdAt: -1 });
         return res.status(200).json({ success: true, adoptionListings });
     } catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
+        return res.status(500).json({ success: false, message: "Internal server error" });
     }
 });
 
@@ -103,7 +103,7 @@ router.get("/my-applications", requireAuth, async (req, res) => {
             .sort({ createdAt: -1 });
         return res.status(200).json({ success: true, applications });
     } catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
+        return res.status(500).json({ success: false, message: "Internal server error" });
     }
 });
 
@@ -161,7 +161,7 @@ router.get("/:id/applications", requireAuth, async (req, res) => {
         const applications = await AdoptionApplication.find({ listingId: listing._id }).sort({ createdAt: -1 });
         return res.status(200).json({ success: true, applications });
     } catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
+        return res.status(500).json({ success: false, message: "Internal server error" });
     }
 });
 
@@ -252,7 +252,7 @@ router.patch("/applications/:applicationId/reject", requireAuth, async (req, res
 
         return res.status(200).json({ success: true, application });
     } catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
+        return res.status(500).json({ success: false, message: "Internal server error" });
     }
 });
 
@@ -269,7 +269,7 @@ router.patch("/applications/:applicationId/cancel", requireAuth, async (req, res
 
         return res.status(200).json({ success: true, application });
     } catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
+        return res.status(500).json({ success: false, message: "Internal server error" });
     }
 });
 
