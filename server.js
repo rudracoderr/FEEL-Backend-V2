@@ -88,6 +88,17 @@ app.use(globalLimiter);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Centralized safe handling for JSON body-parser syntax errors
+app.use((err, req, res, next) => {
+   if (err instanceof SyntaxError && (err.status === 400 || err.statusCode === 400) && ("body" in err || err.type === "entity.parse.failed")) {
+      return res.status(400).json({
+         success: false,
+         message: "Invalid JSON format"
+      });
+   }
+   next(err);
+});
 // Remove client-supplied Mongo operator keys ($ne, $gt, $where, dotted paths...) from
 // req.body / req.query / req.params. Only incoming request data is touched.
 app.use(mongoSanitize());
@@ -98,17 +109,19 @@ app.use("/api/adoptions", adoptionRoutes);
 app.use("/api/ngo", ngoRoutes);
 app.use("/api/notifications", notificationRoutes);
 
-app.get("/test-firebase-admin", (req, res) => {
-   if (!admin.isFirebaseAdminInitialized()) {
-      return res.status(500).json({
-         success: false
-      });
-   }
+if (process.env.NODE_ENV !== "production") {
+   app.get("/test-firebase-admin", (req, res) => {
+      if (!admin.isFirebaseAdminInitialized()) {
+         return res.status(500).json({
+            success: false
+         });
+      }
 
-   res.json({
-      success: true
+      res.json({
+         success: true
+      });
    });
-});
+}
 
 
 app.get("/health", (req, res) => {
@@ -132,6 +145,25 @@ if (process.env.NODE_ENV !== "production") {
 
 // The error handler must be registered before any other error middleware and after all controllers
 Sentry.setupExpressErrorHandler(app);
+
+// Fallback error handler to ensure unhandled errors never expose Express HTML stack traces
+app.use((err, req, res, next) => {
+   if (res.headersSent) {
+      return next(err);
+   }
+   if (err instanceof SyntaxError && (err.status === 400 || err.statusCode === 400) && ("body" in err || err.type === "entity.parse.failed")) {
+      return res.status(400).json({
+         success: false,
+         message: "Invalid JSON format"
+      });
+   }
+   const statusCode = typeof err.status === "number" ? err.status : (typeof err.statusCode === "number" ? err.statusCode : 500);
+   return res.status(statusCode).json({
+      success: false,
+      message: statusCode === 400 ? "Bad Request" : "Internal server error"
+   });
+});
+
 
 async function startServer() {
    try {

@@ -453,8 +453,8 @@ router.post("/paid-volunteers", validate(createPaidVolunteerRules), async (req, 
         const email = req.body.email.trim().toLowerCase();
         const status = req.body.status === "pending" ? "pending" : "approved";
 
-        // CASE A: Existing FEEL user in MongoDB
-        let user = await User.findOne({ email });
+        // CASE A: Existing FEEL user in MongoDB (case-insensitive)
+        let user = await User.findOne({ email: new RegExp("^" + escapeRegex(email) + "$", "i") });
 
         if (user) {
             if (user.isPaidVolunteer && user.paidVolunteerStatus === "approved") {
