@@ -489,16 +489,18 @@ router.get("/ngos", requireAuth, async (req, res) => {
 });
 
 // GET REPORT BY ID
-// Public route — but optionally reads the Bearer token to decide projection.
-// Approved paid volunteers receive assignedVolunteer.phone; all other callers do not.
+// Public route — but optionally reads the Bearer token to decide what PII to return.
+// Contact numbers are only returned to parties involved in the rescue:
+//   - reporter (after accept): assignedVolunteer.phone, assistance.acceptedByPhone, own reporterContact
+//   - assigned / assisting volunteer: reporterContact, assignedVolunteer.phone
+//   - approved paid volunteers and admins: assignedVolunteer.phone (admins also reporterContact)
+// Guests and uninvolved users never receive any contact info.
 router.get("/:id", async (req, res) => {
     try {
         let isPaidVolunteer = false;
+        let callerUid = null;
+        let isAdminCaller = false;
         const authHeader = req.headers.authorization || "";
-
-        // ── DIAGNOSTIC LOG 1: raw Authorization header ─────────────────────
-        console.log("[GET /:id] Authorization header:", authHeader ? authHeader.substring(0, 30) + "…" : "(none)");
-
         const tokenMatch = /^Bearer\s+(.+)$/i.exec(authHeader);
 
         if (tokenMatch) {
@@ -507,34 +509,30 @@ router.get("/:id", async (req, res) => {
                 if (admin.isFirebaseAdminInitialized()) {
                     const decoded = await admin.auth().verifyIdToken(tokenMatch[1]);
                     if (decoded?.uid) {
+                        callerUid = decoded.uid;
                         const caller = await User.findOne({ uid: decoded.uid })
-                            .select({ isPaidVolunteer: 1, paidVolunteerStatus: 1 })
+                            .select({ isPaidVolunteer: 1, paidVolunteerStatus: 1, role: 1 })
                             .lean();
-
-                        // ── DIAGNOSTIC LOG 2: user lookup result ───────────────────────
-                        console.log("[GET /:id] User lookup result:", {
-                            uid: decoded.uid,
-                            isPaidVolunteer: caller?.isPaidVolunteer,
-                            status: caller?.paidVolunteerStatus
-                        });
 
                         if (caller?.isPaidVolunteer === true && caller?.paidVolunteerStatus === "approved") {
                             isPaidVolunteer = true;
+                        }
+                        if (caller?.role === "admin") {
+                            isAdminCaller = true;
                         }
                     }
                 }
             } catch (authErr) {
                 // Missing/expired token — treat as unauthenticated
-                console.log(`[GET /:id] optional auth skipped: ${authErr.message}`);
             }
         }
 
-        const projection = isPaidVolunteer
-            ? REPORT_DETAIL_PROJECTION_PAID_VOLUNTEER
-            : REPORT_DETAIL_PROJECTION;
-
-        // ── DIAGNOSTIC LOG 3: projection chosen ────────────────────────────
-        console.log("[GET /:id] Projection chosen:", { isPaidVolunteer, projection });
+        // Fetch with a superset projection (still excludes reporterDeviceToken etc.),
+        // then strip whatever this caller is not entitled to see.
+        const projection = {
+            ...REPORT_DETAIL_PROJECTION_PAID_VOLUNTEER,
+            reporterContact: 1
+        };
 
         const report = await Report.findById(req.params.id).select(projection).lean();
 
@@ -542,11 +540,21 @@ router.get("/:id", async (req, res) => {
             return res.status(404).json({ error: "Report not found" });
         }
 
-        // ── DIAGNOSTIC LOG 4: raw Mongo document assignedVolunteer ─────────
-        console.log("[GET /:id] Mongo report.assignedVolunteer:", JSON.stringify(report.assignedVolunteer));
+        const isReporter = Boolean(callerUid) && report.reporterUid === callerUid;
+        const isAssignedVolunteer = Boolean(callerUid) && report.assignedVolunteer?.uid === callerUid;
+        const isAssistingVolunteer = Boolean(callerUid) && report.assistance?.acceptedByUid === callerUid;
+        const isContactPhase = ["accepted", "resolved"].includes(report.status);
 
-        // ── DIAGNOSTIC LOG 5: full response payload ─────────────────────────
-        console.log("[GET /:id] Final response assignedVolunteer keys:", Object.keys(report.assignedVolunteer || {}));
+        const canSeeReporterContact = isAdminCaller || isReporter || isAssignedVolunteer || isAssistingVolunteer;
+        const canSeeHelperPhone = canSeeReporterContact || isPaidVolunteer || (isReporter && isContactPhase);
+
+        if (!canSeeReporterContact) {
+            delete report.reporterContact;
+        }
+        if (!canSeeHelperPhone) {
+            if (report.assignedVolunteer) delete report.assignedVolunteer.phone;
+            if (report.assistance) delete report.assistance.acceptedByPhone;
+        }
 
         return res.status(200).json(report);
     } catch (error) {
